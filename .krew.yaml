@@ -1,0 +1,94 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: isvc
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/klahio/kubectl-isvc
+  shortDescription: Diagnose, smoke-test and read logs of KServe InferenceServices
+  description: |
+    Day-to-day operational commands for a single KServe InferenceService
+    (short name isvc):
+
+      kubectl isvc status NAME   one-screen summary, and the root cause when the
+                                 model is not serving (model download, image pull,
+                                 crash, out of memory, scheduling, missing runtime,
+                                 unreachable Ingress or Gateway API route)
+      kubectl isvc test NAME -f input.json
+                                 send a smoke-test inference request; finds the
+                                 address (port-forward if needed) and the protocol
+                                 (v1 or Open Inference Protocol v2) automatically
+      kubectl isvc logs NAME     logs of the model server, storage-initializer or
+                                 every component, without looking up pod names
+
+    Supports KServe v0.16 to v0.21 in Standard mode, with Ingress or Gateway API.
+  caveats: |
+    The plugin only reads cluster objects. `kubectl isvc test` also needs
+    permission to create pods/portforward when it falls back to port-forward.
+  platforms:
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_linux_amd64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-isvc
+      to: .
+    - from: LICENSE
+      to: .
+    bin: kubectl-isvc
+  - selector:
+      matchLabels:
+        os: linux
+        arch: arm64
+    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_linux_arm64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-isvc
+      to: .
+    - from: LICENSE
+      to: .
+    bin: kubectl-isvc
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_darwin_amd64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-isvc
+      to: .
+    - from: LICENSE
+      to: .
+    bin: kubectl-isvc
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: arm64
+    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_darwin_arm64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-isvc
+      to: .
+    - from: LICENSE
+      to: .
+    bin: kubectl-isvc
+  - selector:
+      matchLabels:
+        os: windows
+        arch: amd64
+    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_windows_amd64.zip" .TagName }}
+    files:
+    - from: kubectl-isvc.exe
+      to: .
+    - from: LICENSE
+      to: .
+    bin: kubectl-isvc.exe
+  - selector:
+      matchLabels:
+        os: windows
+        arch: arm64
+    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_windows_arm64.zip" .TagName }}
+    files:
+    - from: kubectl-isvc.exe
+      to: .
+    - from: LICENSE
+      to: .
+    bin: kubectl-isvc.exe

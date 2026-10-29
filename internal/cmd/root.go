@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
+
+	"github.com/klahio/kubectl-isvc/internal/version"
 )
 
 // PluginName is the only place the plugin's name is spelled out, so a rename (see docs/mvp.md, decision 5) stays cheap.
@@ -80,6 +82,7 @@ func newRootCommand(streams genericiooptions.IOStreams) *cobra.Command {
 		// cobra takes the command name from the first word of Use; the display name makes help read "kubectl isvc".
 		Annotations:   map[string]string{cobra.CommandDisplayNameAnnotation: commandPrefix() + PluginName},
 		Short:         "Operate a single KServe InferenceService",
+		Version:       version.String(),
 		Long:          "Day-to-day operational commands for a single KServe InferenceService: status, test and logs.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -91,7 +94,15 @@ func newRootCommand(streams genericiooptions.IOStreams) *cobra.Command {
 	opts.configFlags.AddFlags(root.PersistentFlags())
 	root.PersistentFlags().BoolVar(&opts.noColor, "no-color", false, "Turn off colored output (the NO_COLOR environment variable does the same)")
 
-	root.AddCommand(newStatusCommand(opts), newTestCommand(opts), newLogsCommand(opts))
+	root.SetVersionTemplate("{{.DisplayName}} {{.Version}}\n")
+	root.AddCommand(newStatusCommand(opts), newTestCommand(opts), newLogsCommand(opts), &cobra.Command{
+		Use:   "version",
+		Short: "Print the plugin version",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintln(cmd.OutOrStdout(), commandPrefix()+PluginName, version.String())
+		},
+	})
 	return root
 }
 

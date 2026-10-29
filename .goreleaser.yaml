@@ -1,0 +1,58 @@
+# Release build: per-platform archives with the LICENSE, plus sha256 checksums (docs/mvp.md section 10).
+# Local dry run: go run github.com/goreleaser/goreleaser/v2@v2.18.3 release --snapshot --clean
+version: 2
+
+project_name: kubectl-isvc
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: kubectl-isvc
+    binary: kubectl-isvc
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/klahio/kubectl-isvc/internal/version.Version={{ .Tag }}
+      - -X github.com/klahio/kubectl-isvc/internal/version.Commit={{ .FullCommit }}
+      - -X github.com/klahio/kubectl-isvc/internal/version.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: kubectl-isvc
+    # The name must match the URIs in .krew.yaml.
+    name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: klahio
+    name: kubectl-isvc
+  draft: false
+  prerelease: auto

@@ -377,6 +377,7 @@ Decided 2026-10-29:
 - **Version handling in one place.** A small internal package turns an unstructured InferenceService into one plugin-side model: mode, runtime, components, canaries and exposure. All the "field exists or not" fallbacks live there, so commands never branch on KServe versions themselves.
 - **Gateway API objects** (HTTPRoute, Gateway) are read through the dynamic client too. If the Gateway API CustomResourceDefinitions are not installed in the cluster, that part is silently skipped.
 - **Go module path**: `github.com/klahio/kubectl-isvc`
+- **License**: Apache License 2.0 (`LICENSE`, included in every release archive and extracted by krew)
 - **Release**:
   - GoReleaser and GitHub Actions build per-platform archives: Linux, macOS and Windows on amd64 and arm64, with sha256 checksums and fixed version tags.
   - A `.krew.yaml` template feeds the pull request to `krew-index`.

@@ -1,0 +1,32 @@
+name: release
+
+# Pushing a tag such as v0.1.0 builds the archives with GoReleaser and publishes a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: v2.18.3
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # krew-release-bot opens the version-bump pull request on krew-index from .krew.yaml. The first version must
+      # be submitted to krew-index by hand, so this step runs only after the repository variable
+      # KREW_INDEX_LISTED is set to "true".
+      - name: update krew-index
+        if: vars.KREW_INDEX_LISTED == 'true'
+        uses: rajatjindal/krew-release-bot@v0.0.51
