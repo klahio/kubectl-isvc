@@ -11,9 +11,10 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 
 	"github.com/klahio/kubectl-isvc/internal/isvc"
+	"github.com/klahio/kubectl-isvc/internal/kube"
 )
 
-func fakeClients(f *fixture) Clients {
+func fakeClients(f *fixture) kube.Clients {
 	listKinds := map[schema.GroupVersionResource]string{
 		isvc.InferenceServiceGVR:      "InferenceServiceList",
 		isvc.ServingRuntimeGVR:        "ServingRuntimeList",
@@ -31,7 +32,7 @@ func fakeClients(f *fixture) Clients {
 	for i := range f.gateways {
 		objs = append(objs, &f.gateways[i])
 	}
-	return Clients{
+	return kube.Clients{
 		Kube:    kubefake.NewClientset(f.typedObjects()...),
 		Dynamic: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), listKinds, objs...),
 	}
@@ -67,7 +68,7 @@ func TestCollectHealthy(t *testing.T) {
 func TestCollectNotFound(t *testing.T) {
 	f := loadFixture(t, "sklearn-iris")
 	_, err := Collect(context.Background(), fakeClients(f), "kserve-test", "missing", false)
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, kube.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }

@@ -4,8 +4,6 @@ package status
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -23,6 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/klahio/kubectl-isvc/internal/isvc"
+	"github.com/klahio/kubectl-isvc/internal/kube"
 )
 
 var (
@@ -55,21 +54,9 @@ type Snapshot struct {
 	Unknown map[string]string
 }
 
-// Clients are the Kubernetes clients the collector reads from.
-type Clients struct {
-	Kube    kubernetes.Interface
-	Dynamic dynamic.Interface
-}
-
-// ErrNotFound means the InferenceService does not exist.
-var ErrNotFound = errors.New("InferenceService not found")
-
 // Collect reads the InferenceService and the objects around it.
-func Collect(ctx context.Context, c Clients, namespace, name string, withEvents bool) (*Snapshot, error) {
-	u, err := c.Dynamic.Resource(isvc.InferenceServiceGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("%w: %s/%s", ErrNotFound, namespace, name)
-	}
+func Collect(ctx context.Context, c kube.Clients, namespace, name string, withEvents bool) (*Snapshot, error) {
+	u, err := c.GetInferenceService(ctx, namespace, name)
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	"sigs.k8s.io/yaml"
 
+	"github.com/klahio/kubectl-isvc/internal/kube"
 	"github.com/klahio/kubectl-isvc/internal/status"
 )
 
@@ -113,7 +114,7 @@ func (o *statusOptions) result(ready bool) error {
 }
 
 // once collects, diagnoses and prints one summary. It reports whether the InferenceService is Ready.
-func (o *statusOptions) once(ctx context.Context, clients status.Clients, namespace, name string, w io.Writer) (bool, error) {
+func (o *statusOptions) once(ctx context.Context, clients kube.Clients, namespace, name string, w io.Writer) (bool, error) {
 	snap, err := status.Collect(ctx, clients, namespace, name, o.events)
 	if err != nil {
 		return false, clusterError(err)
@@ -159,7 +160,7 @@ func (o *statusOptions) once(ctx context.Context, clients status.Clients, namesp
 	return ready, nil
 }
 
-func tailLogs(ctx context.Context, clients status.Clients, namespace string, ref *status.LogRef) []string {
+func tailLogs(ctx context.Context, clients kube.Clients, namespace string, ref *status.LogRef) []string {
 	lines := int64(statusLogLines)
 	req := clients.Kube.CoreV1().Pods(namespace).GetLogs(ref.Pod, &corev1.PodLogOptions{
 		Container: ref.Container,
