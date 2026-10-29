@@ -91,7 +91,7 @@ func newRootCommand(streams genericiooptions.IOStreams) *cobra.Command {
 	opts.configFlags.AddFlags(root.PersistentFlags())
 	root.PersistentFlags().BoolVar(&opts.noColor, "no-color", false, "Turn off colored output (the NO_COLOR environment variable does the same)")
 
-	root.AddCommand(newStatusCommand(opts), newLogsCommand(opts))
+	root.AddCommand(newStatusCommand(opts), newTestCommand(opts), newLogsCommand(opts))
 	return root
 }
 

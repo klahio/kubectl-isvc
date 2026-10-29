@@ -28,7 +28,7 @@ func (o *rootOptions) clients() (kube.Clients, string, error) {
 	if err != nil {
 		return kube.Clients{}, "", &ExitError{Code: ExitClusterOrNF, Err: err}
 	}
-	return kube.Clients{Kube: typed, Dynamic: dyn}, namespace, nil
+	return kube.Clients{Kube: typed, Dynamic: dyn, Config: cfg}, namespace, nil
 }
 
 func jsonIndent(buf *bytes.Buffer, data []byte) error {

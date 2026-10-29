@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/klahio/kubectl-isvc/internal/isvc"
 )
@@ -19,6 +20,8 @@ import (
 type Clients struct {
 	Kube    kubernetes.Interface
 	Dynamic dynamic.Interface
+	// Config is needed for port-forward, which talks to the API server outside the typed clients.
+	Config *rest.Config
 }
 
 // ErrNotFound means the InferenceService does not exist.
