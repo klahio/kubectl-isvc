@@ -7,21 +7,23 @@ spec:
   homepage: https://github.com/klahio/kubectl-isvc
   shortDescription: Diagnose, smoke-test and read logs of KServe InferenceServices
   description: |
-    Day-to-day operational commands for a single KServe InferenceService
-    (short name isvc):
+    A KServe InferenceService fans out into a serving runtime, Deployments,
+    pods with a model-download init container, Services, an Ingress or Gateway
+    API routes, and an autoscaler. When a model is not serving, the cause is
+    usually several objects away, and KServe's own Ready reason often points
+    somewhere else (for example "Predictor ingress not created" when the pod
+    is out of memory).
 
-      kubectl isvc status NAME   one-screen summary, and the root cause when the
-                                 model is not serving (model download, image pull,
-                                 crash, out of memory, scheduling, missing runtime,
-                                 unreachable Ingress or Gateway API route)
-      kubectl isvc test NAME -f input.json
-                                 send a smoke-test inference request; finds the
-                                 address (port-forward if needed) and the protocol
-                                 (v1 or Open Inference Protocol v2) automatically
-      kubectl isvc logs NAME     logs of the model server, storage-initializer or
-                                 every component, without looking up pod names
+    This plugin follows that chain for you. It names the actual root cause:
+    a failed model download, an image that cannot be pulled, a crash or an
+    out-of-memory kill, a pod that cannot be scheduled, a model format without
+    a runtime, or an external address that cannot be reached. It also sends a
+    smoke-test request without you knowing the address or the inference
+    protocol, falling back to port-forward when the model is not exposed. And
+    it shows the right container logs without pod names.
 
-    Supports KServe v0.16 to v0.21 in Standard mode, with Ingress or Gateway API.
+    Supports KServe v0.16 to v0.21 in Standard mode, with Ingress or Gateway
+    API, including canary rollouts. Read-only: it never changes the cluster.
   caveats: |
     The plugin only reads cluster objects. `kubectl isvc test` also needs
     permission to create pods/portforward when it falls back to port-forward.

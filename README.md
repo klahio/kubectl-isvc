@@ -148,7 +148,7 @@ Every command takes the usual kubectl connection flags: `-n`, `--context`, `--ku
 
 | | Supported |
 |---|---|
-| KServe | v0.16 – v0.21 |
+| KServe | v0.16 – v0.21. Tested on v0.21.0; v0.16 – v0.20 are covered by comparing the KServe source of each release, not yet by tests |
 | Deployment mode | Standard (formerly RawDeployment). Knative (Serverless) mode is not supported yet |
 | Exposure | Kubernetes Ingress and Gateway API HTTPRoute |
 | Canary rollouts | `spec.canary` (KServe v0.21, Standard mode) |

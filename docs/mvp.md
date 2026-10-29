@@ -195,7 +195,7 @@ Hint: the external address is not reachable; `kubectl isvc test sklearn-iris` wi
 - It flags the external address as not routable on the lab cluster, where IngressClass `istio` does not exist.
 - With KServe switched to Gateway API on the lab cluster, it shows the HTTPRoute and the `lab-gateway` Gateway with its address.
 - `status --exit-code` exits 0 for a Ready InferenceService and 1 for each broken sample.
-- Against KServe v0.16 it shows the same sections, except canary.
+- Against KServe v0.16 it shows the same sections, except canary. (Not verified yet; see section 7, version matrix.)
 - For each deliberately broken sample in section 7, the diagnosis line names the right cause.
 - It finishes in under 2 seconds on the lab cluster for a single InferenceService.
 
@@ -333,9 +333,13 @@ Both setups must pass before a release. Fixtures for both are in `internal/statu
 
 ### Version matrix
 
-Unit tests use objects captured from each supported line: v0.16 (oldest), v0.18 (middle) and v0.21 (newest). Continuous integration runs the unit tests on every pull request.
+**Current state (2026-10-29): only KServe v0.21.0 is tested.** The unit-test fixtures are `internal/status/testdata/v0.21` (Ingress) and `v0.21-gateway-api`. Support for v0.16 – v0.20 rests on comparing the KServe source at each release tag (section 2.1), not on tests. The README says so too.
 
-End-to-end tests run in continuous integration against a kind cluster with KServe installed, once per version in the matrix. They are not run on every pull request. This machine has no Docker or kind today, so those tests run only in continuous integration until a local setup exists.
+Target, not done yet:
+- **Fixtures** from each supported line: v0.16 (oldest), v0.18 (middle) and v0.21 (newest), captured with `hack/capture-fixtures.sh`.
+- **End-to-end tests** in continuous integration against a kind cluster with KServe installed, once per version in the matrix. They would run on a schedule, not on every pull request. This machine has no Docker or kind, so the version-matrix work needs that first.
+
+Continuous integration (`.github/workflows/ci.yml`) runs the unit tests on every push and pull request.
 
 ## 8. Decisions
 
