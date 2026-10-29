@@ -1,0 +1,77 @@
+{
+  "apiVersion": "serving.kserve.io/v1beta1",
+  "kind": "InferenceService",
+  "metadata": {
+    "annotations": {
+      "modelFormat": "sklearn",
+      "serving.kserve.io/deploymentMode": "Standard"
+    },
+    "creationTimestamp": "2026-10-29T22:02:13Z",
+    "finalizers": [
+      "inferenceservice.finalizers"
+    ],
+    "generation": 1,
+    "name": "bad-image",
+    "namespace": "kserve-test",
+    "resourceVersion": "8229730",
+    "uid": "98b49ba7-1194-45bd-93a7-6a7281bfed77"
+  },
+  "spec": {
+    "predictor": {
+      "model": {
+        "modelFormat": {
+          "name": "sklearn"
+        },
+        "name": "",
+        "resources": {},
+        "runtimeVersion": "v0.0.0-does-not-exist",
+        "storageUri": "gs://kfserving-examples/models/sklearn/1.0/model"
+      }
+    }
+  },
+  "status": {
+    "clusterServingRuntimeName": "kserve-sklearnserver",
+    "components": {
+      "predictor": {}
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-29T22:02:13Z",
+        "reason": "Predictor ingress not created",
+        "status": "False",
+        "type": "IngressReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:13Z",
+        "message": "Deployment does not have minimum availability.",
+        "reason": "MinimumReplicasUnavailable",
+        "status": "False",
+        "type": "PredictorReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:29Z",
+        "reason": "Predictor ingress not created",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:13Z",
+        "severity": "Info",
+        "status": "False",
+        "type": "Stopped"
+      }
+    ],
+    "deploymentMode": "Standard",
+    "modelStatus": {
+      "copies": {
+        "failedCopies": 0
+      },
+      "states": {
+        "activeModelState": "",
+        "targetModelState": "Pending"
+      },
+      "transitionStatus": "InProgress"
+    },
+    "observedGeneration": 1
+  }
+}

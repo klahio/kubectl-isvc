@@ -1,0 +1,28 @@
+bad-storage   namespace: kserve-test   mode: Standard   Not Ready   age: 57m
+
+Endpoints
+  external     -
+  in-cluster   -
+
+Model
+  format    sklearn
+  storage   gs://kfserving-examples/models/sklearn/does-not-exist
+  runtime   kserve-sklearnserver (ClusterServingRuntime)   protocols: v1, v2
+  state     - → FailedToLoad (BlockedByFailedLoad)
+
+Components
+  predictor   Not Ready   replicas 0/1   autoscaling 1–1 (cpu 80%)
+
+Conditions
+  Ready            False   Predictor ingress not created
+  IngressReady     False   Predictor ingress not created
+  PredictorReady   False   MinimumReplicasUnavailable: Deployment does not have minimum availability.
+  Stopped          False
+
+Diagnosis
+  ✗ Model download failed   predictor pod/bad-storage-predictor-f4cfc7765-wxst8
+      storage-initializer exited with code 1 (restarts: 5)
+      2026-10-29 22:06:26.470 1 storage.initializer ERROR [initializer-entrypoint:<module>():28] Storage initialization failed: GCS resource 'kfserving-examples' not found.
+      last log lines of storage-initializer:
+        (log lines are fetched from the cluster)
+      hint: check spec.predictor.model.storageUri and the storage credentials

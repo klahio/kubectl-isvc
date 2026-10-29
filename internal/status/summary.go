@@ -1,0 +1,224 @@
+package status
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/klahio/kubectl-isvc/internal/isvc"
+)
+
+// Summary is the structured result of the status command. It is what `-o json|yaml` prints, and the text
+// renderer prints nothing that is not in it.
+type Summary struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	Mode        string            `json:"mode"`
+	Ready       string            `json:"ready"`
+	Created     time.Time         `json:"created"`
+	Endpoints   Endpoints         `json:"endpoints"`
+	Model       isvc.Model        `json:"model"`
+	Runtime     *Runtime          `json:"runtime,omitempty"`
+	ModelStatus isvc.ModelStatus  `json:"modelStatus"`
+	Components  []ComponentState  `json:"components"`
+	Canary      *CanarySplit      `json:"canary,omitempty"`
+	Conditions  []isvc.Condition  `json:"conditions"`
+	Findings    []Finding         `json:"findings"`
+	Warnings    []string          `json:"warnings,omitempty"`
+	Unknown     map[string]string `json:"unknown,omitempty"`
+}
+
+// Endpoints are the addresses of the InferenceService and how it is exposed.
+type Endpoints struct {
+	External  string     `json:"external,omitempty"`
+	InCluster string     `json:"inCluster,omitempty"`
+	Exposure  []Exposure `json:"exposure,omitempty"`
+	// Routable is false when a finding says the external address cannot be reached.
+	Routable bool `json:"routable"`
+}
+
+// Exposure is one Ingress or HTTPRoute that publishes the InferenceService.
+type Exposure struct {
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Via     string `json:"via,omitempty"` // IngressClass name, or Gateway namespace/name
+	Address string `json:"address,omitempty"`
+}
+
+// ComponentState is the state of a predictor, transformer or explainer.
+type ComponentState struct {
+	Name          string       `json:"name"`
+	Ready         string       `json:"ready"`
+	Reason        string       `json:"reason,omitempty"`
+	ReadyReplicas int32        `json:"readyReplicas"`
+	Replicas      int32        `json:"replicas"`
+	Autoscaling   *Autoscaling `json:"autoscaling,omitempty"`
+}
+
+// Autoscaling is the HorizontalPodAutoscaler range of a component.
+type Autoscaling struct {
+	Min    int32  `json:"min"`
+	Max    int32  `json:"max"`
+	Target string `json:"target,omitempty"`
+}
+
+// CanarySplit shows how traffic is shared between the stable predictor and the canaries.
+type CanarySplit struct {
+	StablePercent int64         `json:"stablePercent"`
+	Canaries      []isvc.Canary `json:"canaries"`
+	Ready         string        `json:"ready"`
+}
+
+// Summarize turns a snapshot and its findings into the summary.
+func Summarize(s *Snapshot, findings []Finding) *Summary {
+	m := s.ISVC
+	sum := &Summary{
+		Name:        m.Name,
+		Namespace:   m.Namespace,
+		Mode:        m.Mode,
+		Ready:       m.Ready(),
+		Created:     m.Created,
+		Model:       m.Model,
+		Runtime:     s.Runtime,
+		ModelStatus: m.ModelState,
+		Conditions:  m.Conditions,
+		Findings:    findings,
+		Unknown:     s.Unknown,
+		Endpoints: Endpoints{
+			External:  m.URL,
+			InCluster: m.AddressURL,
+			Exposure:  exposures(s),
+			Routable:  true,
+		},
+	}
+	if sum.Findings == nil {
+		sum.Findings = []Finding{}
+	}
+	for _, f := range findings {
+		if f.Title == "External address not routable" {
+			sum.Endpoints.Routable = false
+		}
+	}
+	if m.URL == "" {
+		sum.Endpoints.Routable = false
+	}
+	if m.OlderThanSupported {
+		sum.Warnings = append(sum.Warnings, "KServe older than v0.16 is not supported; some fields may be missing")
+	}
+
+	for _, c := range m.Components {
+		sum.Components = append(sum.Components, componentState(s, c.Name))
+	}
+
+	if len(m.Canaries) > 0 {
+		split := &CanarySplit{StablePercent: 100, Canaries: m.Canaries, Ready: "Unknown"}
+		for _, c := range m.Canaries {
+			split.StablePercent -= c.TrafficPercent
+		}
+		if c, ok := m.Condition("CanaryPredictorReady"); ok {
+			split.Ready = c.Status
+		}
+		sum.Canary = split
+	}
+	return sum
+}
+
+func componentState(s *Snapshot, name string) ComponentState {
+	cs := ComponentState{Name: name, Ready: "Unknown"}
+	if c, ok := s.ISVC.Condition(strings.ToUpper(name[:1]) + name[1:] + "Ready"); ok {
+		cs.Ready, cs.Reason = c.Status, c.Reason
+	}
+	for _, d := range s.Deployments {
+		if d.Labels[isvc.LabelComponent] != name {
+			continue
+		}
+		cs.ReadyReplicas += d.Status.ReadyReplicas
+		if d.Spec.Replicas != nil {
+			cs.Replicas += *d.Spec.Replicas
+		}
+	}
+	for _, h := range s.Autoscalers {
+		if h.Labels[isvc.LabelComponent] != name {
+			continue
+		}
+		a := &Autoscaling{Max: h.Spec.MaxReplicas, Min: 1, Target: metricTarget(h)}
+		if h.Spec.MinReplicas != nil {
+			a.Min = *h.Spec.MinReplicas
+		}
+		cs.Autoscaling = a
+	}
+	return cs
+}
+
+func metricTarget(h autoscalingv2.HorizontalPodAutoscaler) string {
+	var parts []string
+	for _, m := range h.Spec.Metrics {
+		if m.Resource == nil {
+			parts = append(parts, string(m.Type))
+			continue
+		}
+		t := m.Resource.Target
+		switch {
+		case t.AverageUtilization != nil:
+			parts = append(parts, fmt.Sprintf("%s %d%%", m.Resource.Name, *t.AverageUtilization))
+		case t.AverageValue != nil:
+			parts = append(parts, fmt.Sprintf("%s %s", m.Resource.Name, t.AverageValue.String()))
+		default:
+			parts = append(parts, string(m.Resource.Name))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func exposures(s *Snapshot) []Exposure {
+	var out []Exposure
+	for _, ing := range s.Ingresses {
+		e := Exposure{Kind: "Ingress", Name: ing.Name}
+		if ing.Spec.IngressClassName != nil {
+			e.Via = "IngressClass " + *ing.Spec.IngressClassName
+		}
+		for _, lb := range ing.Status.LoadBalancer.Ingress {
+			e.Address = firstNonEmpty(lb.IP, lb.Hostname)
+			break
+		}
+		out = append(out, e)
+	}
+	for i := range s.HTTPRoutes {
+		r := &s.HTTPRoutes[i]
+		for _, ref := range parentRefs(r) {
+			e := Exposure{Kind: "HTTPRoute", Name: r.GetName(), Via: "Gateway " + ref.Namespace + "/" + ref.Name}
+			for _, gw := range s.Gateways {
+				if gw.GetNamespace() == ref.Namespace && gw.GetName() == ref.Name {
+					e.Address = gatewayAddress(&gw)
+				}
+			}
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// GatewayAddress returns the first address of a Gateway, or "".
+func gatewayAddress(gw *unstructured.Unstructured) string {
+	addrs, _, _ := unstructured.NestedSlice(gw.Object, "status", "addresses")
+	for _, a := range addrs {
+		if m, ok := a.(map[string]any); ok {
+			if v, _, _ := unstructured.NestedString(m, "value"); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}

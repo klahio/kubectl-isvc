@@ -1,0 +1,11 @@
+# Deliberately broken sample for the status diagnosis tests (docs/mvp.md section 7): no serving runtime supports the model format
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: no-runtime
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: no-such-format
+      storageUri: gs://kfserving-examples/models/sklearn/1.0/model

@@ -1,0 +1,90 @@
+{
+  "apiVersion": "serving.kserve.io/v1beta1",
+  "kind": "InferenceService",
+  "metadata": {
+    "annotations": {
+      "modelFormat": "sklearn",
+      "serving.kserve.io/deploymentMode": "Standard"
+    },
+    "creationTimestamp": "2026-10-29T20:35:14Z",
+    "finalizers": [
+      "inferenceservice.finalizers"
+    ],
+    "generation": 1,
+    "name": "sklearn-iris",
+    "namespace": "kserve-test",
+    "resourceVersion": "8175172",
+    "uid": "b97902c1-9fda-4f23-b552-d532bcc72ad2"
+  },
+  "spec": {
+    "predictor": {
+      "model": {
+        "modelFormat": {
+          "name": "sklearn"
+        },
+        "name": "",
+        "resources": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "100m",
+            "memory": "256Mi"
+          }
+        },
+        "storageUri": "gs://kfserving-examples/models/sklearn/1.0/model"
+      }
+    }
+  },
+  "status": {
+    "address": {
+      "url": "http://sklearn-iris-predictor.kserve-test.svc.cluster.local"
+    },
+    "clusterServingRuntimeName": "kserve-sklearnserver",
+    "components": {
+      "predictor": {
+        "url": "http://sklearn-iris-predictor-kserve-test.example.com"
+      }
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-29T20:35:54Z",
+        "status": "True",
+        "type": "IngressReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T20:35:54Z",
+        "message": "ReplicaSet \"sklearn-iris-predictor-d98b9d78d\" has successfully progressed.",
+        "reason": "NewReplicaSetAvailable",
+        "status": "True",
+        "type": "PredictorReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T20:35:54Z",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T20:35:15Z",
+        "severity": "Info",
+        "status": "False",
+        "type": "Stopped"
+      }
+    ],
+    "deploymentMode": "Standard",
+    "modelStatus": {
+      "copies": {
+        "failedCopies": 0,
+        "totalCopies": 1
+      },
+      "states": {
+        "activeModelState": "Loaded",
+        "targetModelState": "Loaded"
+      },
+      "transitionStatus": "UpToDate"
+    },
+    "observedGeneration": 1,
+    "url": "http://sklearn-iris-kserve-test.example.com"
+  }
+}

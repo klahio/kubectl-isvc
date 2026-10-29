@@ -1,0 +1,11 @@
+# Deliberately broken sample for the status diagnosis tests (docs/mvp.md section 7): the model path does not exist
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: bad-storage
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: gs://kfserving-examples/models/sklearn/does-not-exist

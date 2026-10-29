@@ -1,0 +1,81 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "Ingress",
+      "metadata": {
+        "annotations": {
+          "modelFormat": "sklearn",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T20:35:54Z",
+        "generation": 1,
+        "name": "sklearn-iris",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "sklearn-iris",
+            "uid": "b97902c1-9fda-4f23-b552-d532bcc72ad2"
+          }
+        ],
+        "resourceVersion": "8175168",
+        "uid": "2d8dccbd-b7c1-4992-a830-49a7fedde80a"
+      },
+      "spec": {
+        "ingressClassName": "istio",
+        "rules": [
+          {
+            "host": "sklearn-iris-kserve-test.example.com",
+            "http": {
+              "paths": [
+                {
+                  "backend": {
+                    "service": {
+                      "name": "sklearn-iris-predictor",
+                      "port": {
+                        "number": 80
+                      }
+                    }
+                  },
+                  "path": "/",
+                  "pathType": "Prefix"
+                }
+              ]
+            }
+          },
+          {
+            "host": "sklearn-iris-predictor-kserve-test.example.com",
+            "http": {
+              "paths": [
+                {
+                  "backend": {
+                    "service": {
+                      "name": "sklearn-iris-predictor",
+                      "port": {
+                        "number": 80
+                      }
+                    }
+                  },
+                  "path": "/",
+                  "pathType": "Prefix"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "status": {
+        "loadBalancer": {}
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

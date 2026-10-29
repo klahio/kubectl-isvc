@@ -1,0 +1,24 @@
+no-runtime   namespace: kserve-test   mode: Standard   Unknown   age: 57m
+
+Endpoints
+  external     -
+  in-cluster   -
+
+Model
+  format    no-such-format
+  storage   gs://kfserving-examples/models/sklearn/1.0/model
+  runtime   none selected
+  state     - → FailedToLoad (InvalidSpec)
+
+Components
+  predictor   Unknown   replicas 0/0
+
+Conditions
+  Ready            Unknown
+  IngressReady     Unknown
+  PredictorReady   Unknown
+
+Diagnosis
+  ✗ No serving runtime supports this model   inferenceservice/no-runtime
+      model format "no-such-format": No runtime found to support specified framework/version
+      hint: check spec.predictor.model.modelFormat, or install a ServingRuntime that lists this format with autoSelect: true

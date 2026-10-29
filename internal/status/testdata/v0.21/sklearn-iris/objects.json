@@ -1,0 +1,746 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "annotations": {
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard",
+          "serving.kserve.io/enable-metric-aggregation": "false",
+          "serving.kserve.io/enable-prometheus-scraping": "false"
+        },
+        "creationTimestamp": "2026-10-29T20:35:14Z",
+        "generateName": "sklearn-iris-predictor-d98b9d78d-",
+        "generation": 1,
+        "labels": {
+          "app": "isvc.sklearn-iris-predictor",
+          "component": "predictor",
+          "pod-template-hash": "d98b9d78d",
+          "serving.kserve.io/inferenceservice": "sklearn-iris"
+        },
+        "name": "sklearn-iris-predictor-d98b9d78d-thfn6",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "ReplicaSet",
+            "name": "sklearn-iris-predictor-d98b9d78d",
+            "uid": "d59733c6-e7ec-48ac-8fa2-d0d4c770f015"
+          }
+        ],
+        "resourceVersion": "8175166",
+        "uid": "67a243fe-a95d-4087-8b35-543cad60cce2"
+      },
+      "spec": {
+        "containers": [
+          {
+            "args": [
+              "--model_name=sklearn-iris",
+              "--model_dir=/mnt/models",
+              "--http_port=8080"
+            ],
+            "env": [
+              {
+                "name": "INFERENCE_SERVICE_NAME",
+                "value": "sklearn-iris"
+              }
+            ],
+            "image": "kserve/sklearnserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "readinessProbe": {
+              "failureThreshold": 3,
+              "periodSeconds": 10,
+              "successThreshold": 1,
+              "tcpSocket": {
+                "port": 8080
+              },
+              "timeoutSeconds": 1
+            },
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-z6h8p",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": true,
+        "initContainers": [
+          {
+            "args": [
+              "gs://kfserving-examples/models/sklearn/1.0/model",
+              "/mnt/models"
+            ],
+            "env": [
+              {
+                "name": "HF_HUB_ENABLE_HF_TRANSFER",
+                "value": "1"
+              },
+              {
+                "name": "HF_XET_HIGH_PERFORMANCE",
+                "value": "1"
+              },
+              {
+                "name": "HF_XET_NUM_CONCURRENT_RANGE_GETS",
+                "value": "8"
+              }
+            ],
+            "image": "kserve/storage-initializer:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "storage-initializer",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "100Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "FallbackToLogsOnError",
+            "volumeMounts": [
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location"
+              },
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-z6h8p",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "nodeName": "xklaus03x",
+        "preemptionPolicy": "PreemptLowerPriority",
+        "priority": 0,
+        "restartPolicy": "Always",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "serviceAccount": "default",
+        "serviceAccountName": "default",
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/not-ready",
+            "operator": "Exists",
+            "tolerationSeconds": 300
+          },
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "operator": "Exists",
+            "tolerationSeconds": 300
+          }
+        ],
+        "volumes": [
+          {
+            "name": "kube-api-access-z6h8p",
+            "projected": {
+              "defaultMode": 420,
+              "sources": [
+                {
+                  "serviceAccountToken": {
+                    "expirationSeconds": 3607,
+                    "path": "token"
+                  }
+                },
+                {
+                  "configMap": {
+                    "items": [
+                      {
+                        "key": "ca.crt",
+                        "path": "ca.crt"
+                      }
+                    ],
+                    "name": "kube-root-ca.crt"
+                  }
+                },
+                {
+                  "downwardAPI": {
+                    "items": [
+                      {
+                        "fieldRef": {
+                          "apiVersion": "v1",
+                          "fieldPath": "metadata.namespace"
+                        },
+                        "path": "namespace"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "emptyDir": {},
+            "name": "kserve-provision-location"
+          }
+        ]
+      },
+      "status": {
+        "allocatedResources": {
+          "cpu": "100m",
+          "memory": "256Mi"
+        },
+        "conditions": [
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T20:35:16Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "PodReadyToStartContainers"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T20:35:36Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "Initialized"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T20:35:54Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "Ready"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T20:35:54Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "ContainersReady"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T20:35:14Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "PodScheduled"
+          }
+        ],
+        "containerStatuses": [
+          {
+            "allocatedResources": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "containerID": "containerd://e3b634073189533602d6c9ad1885d229f84524e89293a30f8e1e84144956d5a7",
+            "image": "docker.io/kserve/sklearnserver:v0.21.0",
+            "imageID": "docker.io/kserve/sklearnserver@sha256:8967d3fa3a8132e5e4d0dd7fc743214c451f4d9481edb0ab306e657149fd5a06",
+            "lastState": {},
+            "name": "kserve-container",
+            "ready": true,
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "256Mi"
+              }
+            },
+            "restartCount": 0,
+            "started": true,
+            "state": {
+              "running": {
+                "startedAt": "2026-10-29T20:35:44Z"
+              }
+            },
+            "user": {
+              "linux": {
+                "gid": 1000,
+                "supplementalGroups": [
+                  1000
+                ],
+                "uid": 1000
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-z6h8p",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              },
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              }
+            ]
+          }
+        ],
+        "hostIP": "192.168.4.30",
+        "hostIPs": [
+          {
+            "ip": "192.168.4.30"
+          }
+        ],
+        "initContainerStatuses": [
+          {
+            "allocatedResources": {
+              "cpu": "100m",
+              "memory": "100Mi"
+            },
+            "containerID": "containerd://d20b82950d96cd28650c87e5b45b9291ca1fa4055ee72eda7ea41842bb2b6147",
+            "image": "docker.io/kserve/storage-initializer:v0.21.0",
+            "imageID": "docker.io/kserve/storage-initializer@sha256:3a3a6a8053478c8d8d90f96fc5e54c1892c07784102dda70104374d4f89a3672",
+            "lastState": {},
+            "name": "storage-initializer",
+            "ready": true,
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "100Mi"
+              }
+            },
+            "restartCount": 0,
+            "started": false,
+            "state": {
+              "terminated": {
+                "containerID": "containerd://d20b82950d96cd28650c87e5b45b9291ca1fa4055ee72eda7ea41842bb2b6147",
+                "exitCode": 0,
+                "finishedAt": "2026-10-29T20:35:35Z",
+                "reason": "Completed",
+                "startedAt": "2026-10-29T20:35:22Z"
+              }
+            },
+            "user": {
+              "linux": {
+                "gid": 1000,
+                "supplementalGroups": [
+                  1000
+                ],
+                "uid": 1000
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location"
+              },
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-z6h8p",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              }
+            ]
+          }
+        ],
+        "observedGeneration": 1,
+        "phase": "Running",
+        "podIP": "10.244.0.245",
+        "podIPs": [
+          {
+            "ip": "10.244.0.245"
+          }
+        ],
+        "qosClass": "Burstable",
+        "resources": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "79m",
+            "memory": "256Mi"
+          }
+        },
+        "startTime": "2026-10-29T20:35:15Z"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "annotations": {
+          "deployment.kubernetes.io/revision": "1",
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T20:35:14Z",
+        "generation": 1,
+        "labels": {
+          "app": "isvc.sklearn-iris-predictor",
+          "component": "predictor",
+          "serving.kserve.io/inferenceservice": "sklearn-iris"
+        },
+        "name": "sklearn-iris-predictor",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "sklearn-iris",
+            "uid": "b97902c1-9fda-4f23-b552-d532bcc72ad2"
+          }
+        ],
+        "resourceVersion": "8175167",
+        "uid": "94858991-837b-4609-a2ca-f189fa832de9"
+      },
+      "spec": {
+        "progressDeadlineSeconds": 600,
+        "replicas": 1,
+        "revisionHistoryLimit": 10,
+        "selector": {
+          "matchLabels": {
+            "app": "isvc.sklearn-iris-predictor"
+          }
+        },
+        "strategy": {
+          "rollingUpdate": {
+            "maxSurge": "25%",
+            "maxUnavailable": "25%"
+          },
+          "type": "RollingUpdate"
+        },
+        "template": {
+          "metadata": {
+            "annotations": {
+              "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+              "prometheus.kserve.io/path": "/metrics",
+              "prometheus.kserve.io/port": "8080",
+              "serving.kserve.io/deploymentMode": "Standard"
+            },
+            "labels": {
+              "app": "isvc.sklearn-iris-predictor",
+              "component": "predictor",
+              "serving.kserve.io/inferenceservice": "sklearn-iris"
+            },
+            "name": "sklearn-iris-predictor",
+            "namespace": "kserve-test"
+          },
+          "spec": {
+            "containers": [
+              {
+                "args": [
+                  "--model_name=sklearn-iris",
+                  "--model_dir=/mnt/models",
+                  "--http_port=8080"
+                ],
+                "env": [
+                  {
+                    "name": "INFERENCE_SERVICE_NAME",
+                    "value": "sklearn-iris"
+                  }
+                ],
+                "image": "kserve/sklearnserver:v0.21.0",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "kserve-container",
+                "readinessProbe": {
+                  "failureThreshold": 3,
+                  "periodSeconds": 10,
+                  "successThreshold": 1,
+                  "tcpSocket": {
+                    "port": 8080
+                  },
+                  "timeoutSeconds": 1
+                },
+                "resources": {
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "1Gi"
+                  },
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "256Mi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "privileged": false,
+                  "runAsNonRoot": true
+                },
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File"
+              }
+            ],
+            "dnsPolicy": "ClusterFirst",
+            "restartPolicy": "Always",
+            "schedulerName": "default-scheduler",
+            "securityContext": {},
+            "terminationGracePeriodSeconds": 30
+          }
+        }
+      },
+      "status": {
+        "availableReplicas": 1,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-10-29T20:35:54Z",
+            "lastUpdateTime": "2026-10-29T20:35:54Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-10-29T20:35:14Z",
+            "lastUpdateTime": "2026-10-29T20:35:54Z",
+            "message": "ReplicaSet \"sklearn-iris-predictor-d98b9d78d\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 1,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 1
+      }
+    },
+    {
+      "apiVersion": "autoscaling/v2",
+      "kind": "HorizontalPodAutoscaler",
+      "metadata": {
+        "annotations": {
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T20:35:15Z",
+        "generation": 1,
+        "labels": {
+          "app": "isvc.sklearn-iris-predictor",
+          "component": "predictor",
+          "serving.kserve.io/inferenceservice": "sklearn-iris"
+        },
+        "name": "sklearn-iris-predictor",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "sklearn-iris",
+            "uid": "b97902c1-9fda-4f23-b552-d532bcc72ad2"
+          }
+        ],
+        "resourceVersion": "8232711",
+        "uid": "6d9314b5-cbe8-4fea-b64a-7e9e1f15f88f"
+      },
+      "spec": {
+        "behavior": {
+          "scaleDown": {
+            "policies": [
+              {
+                "periodSeconds": 15,
+                "type": "Percent",
+                "value": 100
+              }
+            ],
+            "selectPolicy": "Max"
+          },
+          "scaleUp": {
+            "policies": [
+              {
+                "periodSeconds": 15,
+                "type": "Pods",
+                "value": 4
+              },
+              {
+                "periodSeconds": 15,
+                "type": "Percent",
+                "value": 100
+              }
+            ],
+            "selectPolicy": "Max",
+            "stabilizationWindowSeconds": 0
+          }
+        },
+        "maxReplicas": 1,
+        "metrics": [
+          {
+            "resource": {
+              "name": "cpu",
+              "target": {
+                "averageUtilization": 80,
+                "type": "Utilization"
+              }
+            },
+            "type": "Resource"
+          }
+        ],
+        "minReplicas": 1,
+        "scaleTargetRef": {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "sklearn-iris-predictor"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-10-29T20:35:15Z",
+            "message": "recommended size matches current size",
+            "reason": "ReadyForNewScale",
+            "status": "True",
+            "type": "AbleToScale"
+          },
+          {
+            "lastTransitionTime": "2026-10-29T20:36:15Z",
+            "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)",
+            "reason": "ValidMetricFound",
+            "status": "True",
+            "type": "ScalingActive"
+          },
+          {
+            "lastTransitionTime": "2026-10-29T20:36:15Z",
+            "message": "the desired count is within the acceptable range",
+            "reason": "DesiredWithinRange",
+            "status": "False",
+            "type": "ScalingLimited"
+          }
+        ],
+        "currentMetrics": [
+          {
+            "resource": {
+              "current": {
+                "averageUtilization": 2,
+                "averageValue": "2m"
+              },
+              "name": "cpu"
+            },
+            "type": "Resource"
+          }
+        ],
+        "currentReplicas": 1,
+        "desiredReplicas": 1,
+        "observedGeneration": 1
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "annotations": {
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T20:35:14Z",
+        "labels": {
+          "app": "isvc.sklearn-iris-predictor",
+          "component": "predictor",
+          "serving.kserve.io/inferenceservice": "sklearn-iris"
+        },
+        "name": "sklearn-iris-predictor",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "sklearn-iris",
+            "uid": "b97902c1-9fda-4f23-b552-d532bcc72ad2"
+          }
+        ],
+        "resourceVersion": "8174674",
+        "uid": "0b570ad5-8884-4d1d-be94-99ec17f57674"
+      },
+      "spec": {
+        "clusterIP": "10.103.190.107",
+        "clusterIPs": [
+          "10.103.190.107"
+        ],
+        "internalTrafficPolicy": "Cluster",
+        "ipFamilies": [
+          "IPv4"
+        ],
+        "ipFamilyPolicy": "SingleStack",
+        "ports": [
+          {
+            "name": "sklearn-iris-predictor",
+            "port": 80,
+            "protocol": "TCP",
+            "targetPort": 8080
+          }
+        ],
+        "selector": {
+          "app": "isvc.sklearn-iris-predictor"
+        },
+        "sessionAffinity": "None",
+        "type": "ClusterIP"
+      },
+      "status": {
+        "loadBalancer": {}
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

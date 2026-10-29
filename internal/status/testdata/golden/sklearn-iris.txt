@@ -1,0 +1,27 @@
+sklearn-iris   namespace: kserve-test   mode: Standard   Ready   age: 57m
+
+Endpoints
+  external     http://sklearn-iris-kserve-test.example.com   ⚠ not routable
+  in-cluster   http://sklearn-iris-predictor.kserve-test.svc.cluster.local
+  ingress      sklearn-iris   via IngressClass istio   address: -
+
+Model
+  format    sklearn
+  storage   gs://kfserving-examples/models/sklearn/1.0/model
+  runtime   kserve-sklearnserver (ClusterServingRuntime)   protocols: v1, v2
+  state     Loaded (UpToDate)
+
+Components
+  predictor   Ready   replicas 1/1   autoscaling 1–1 (cpu 80%)
+
+Conditions
+  Ready            True
+  IngressReady     True
+  PredictorReady   True   NewReplicaSetAvailable: ReplicaSet "sklearn-iris-predictor-d98b9d78d" has successfully progressed.
+  Stopped          False
+
+Diagnosis
+  ⚠ External address not routable   ingress/sklearn-iris
+      IngressClass "istio" does not exist
+      KServe still reports IngressReady=True
+      hint: `kubectl isvc test sklearn-iris` falls back to port-forward

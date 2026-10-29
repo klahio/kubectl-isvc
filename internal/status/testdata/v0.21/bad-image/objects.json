@@ -1,0 +1,712 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "annotations": {
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard",
+          "serving.kserve.io/enable-metric-aggregation": "false",
+          "serving.kserve.io/enable-prometheus-scraping": "false"
+        },
+        "creationTimestamp": "2026-10-29T22:02:13Z",
+        "generateName": "bad-image-predictor-5568b94cf8-",
+        "generation": 1,
+        "labels": {
+          "app": "isvc.bad-image-predictor",
+          "component": "predictor",
+          "pod-template-hash": "5568b94cf8",
+          "serving.kserve.io/inferenceservice": "bad-image"
+        },
+        "name": "bad-image-predictor-5568b94cf8-mdn8v",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "ReplicaSet",
+            "name": "bad-image-predictor-5568b94cf8",
+            "uid": "7b67cdde-1105-46eb-bdd6-b039960aa003"
+          }
+        ],
+        "resourceVersion": "8232051",
+        "uid": "94ca2935-3dc6-425f-9ff0-104c49b273f7"
+      },
+      "spec": {
+        "containers": [
+          {
+            "args": [
+              "--model_name=bad-image",
+              "--model_dir=/mnt/models",
+              "--http_port=8080"
+            ],
+            "env": [
+              {
+                "name": "INFERENCE_SERVICE_NAME",
+                "value": "bad-image"
+              }
+            ],
+            "image": "kserve/sklearnserver:v0.0.0-does-not-exist",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "readinessProbe": {
+              "failureThreshold": 3,
+              "periodSeconds": 10,
+              "successThreshold": 1,
+              "tcpSocket": {
+                "port": 8080
+              },
+              "timeoutSeconds": 1
+            },
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-hh7dg",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": true,
+        "initContainers": [
+          {
+            "args": [
+              "gs://kfserving-examples/models/sklearn/1.0/model",
+              "/mnt/models"
+            ],
+            "env": [
+              {
+                "name": "HF_HUB_ENABLE_HF_TRANSFER",
+                "value": "1"
+              },
+              {
+                "name": "HF_XET_HIGH_PERFORMANCE",
+                "value": "1"
+              },
+              {
+                "name": "HF_XET_NUM_CONCURRENT_RANGE_GETS",
+                "value": "8"
+              }
+            ],
+            "image": "kserve/storage-initializer:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "storage-initializer",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "100Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "FallbackToLogsOnError",
+            "volumeMounts": [
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location"
+              },
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-hh7dg",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "nodeName": "xklaus03x",
+        "preemptionPolicy": "PreemptLowerPriority",
+        "priority": 0,
+        "restartPolicy": "Always",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "serviceAccount": "default",
+        "serviceAccountName": "default",
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/not-ready",
+            "operator": "Exists",
+            "tolerationSeconds": 300
+          },
+          {
+            "effect": "NoExecute",
+            "key": "node.kubernetes.io/unreachable",
+            "operator": "Exists",
+            "tolerationSeconds": 300
+          }
+        ],
+        "volumes": [
+          {
+            "name": "kube-api-access-hh7dg",
+            "projected": {
+              "defaultMode": 420,
+              "sources": [
+                {
+                  "serviceAccountToken": {
+                    "expirationSeconds": 3607,
+                    "path": "token"
+                  }
+                },
+                {
+                  "configMap": {
+                    "items": [
+                      {
+                        "key": "ca.crt",
+                        "path": "ca.crt"
+                      }
+                    ],
+                    "name": "kube-root-ca.crt"
+                  }
+                },
+                {
+                  "downwardAPI": {
+                    "items": [
+                      {
+                        "fieldRef": {
+                          "apiVersion": "v1",
+                          "fieldPath": "metadata.namespace"
+                        },
+                        "path": "namespace"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "emptyDir": {},
+            "name": "kserve-provision-location"
+          }
+        ]
+      },
+      "status": {
+        "allocatedResources": {
+          "cpu": "1",
+          "memory": "2Gi"
+        },
+        "conditions": [
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T22:02:14Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "PodReadyToStartContainers"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T22:02:29Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "Initialized"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "message": "containers with unready status: [kserve-container]",
+            "observedGeneration": 1,
+            "reason": "ContainersNotReady",
+            "status": "False",
+            "type": "Ready"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "message": "containers with unready status: [kserve-container]",
+            "observedGeneration": 1,
+            "reason": "ContainersNotReady",
+            "status": "False",
+            "type": "ContainersReady"
+          },
+          {
+            "lastProbeTime": null,
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "observedGeneration": 1,
+            "status": "True",
+            "type": "PodScheduled"
+          }
+        ],
+        "containerStatuses": [
+          {
+            "image": "kserve/sklearnserver:v0.0.0-does-not-exist",
+            "imageID": "",
+            "lastState": {},
+            "name": "kserve-container",
+            "ready": false,
+            "restartCount": 0,
+            "started": false,
+            "state": {
+              "waiting": {
+                "message": "Back-off pulling image \"kserve/sklearnserver:v0.0.0-does-not-exist\": ErrImagePull: rpc error: code = NotFound desc = failed to pull and unpack image \"docker.io/kserve/sklearnserver:v0.0.0-does-not-exist\": failed to resolve image: docker.io/kserve/sklearnserver:v0.0.0-does-not-exist: not found",
+                "reason": "ImagePullBackOff"
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-hh7dg",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              },
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              }
+            ]
+          }
+        ],
+        "hostIP": "192.168.4.30",
+        "hostIPs": [
+          {
+            "ip": "192.168.4.30"
+          }
+        ],
+        "initContainerStatuses": [
+          {
+            "allocatedResources": {
+              "cpu": "100m",
+              "memory": "100Mi"
+            },
+            "containerID": "containerd://0af28274e5712510cd3a4bef2e8d0d0b3e4914e4c395cd55ba2e098080aee529",
+            "image": "docker.io/kserve/storage-initializer:v0.21.0",
+            "imageID": "docker.io/kserve/storage-initializer@sha256:3a3a6a8053478c8d8d90f96fc5e54c1892c07784102dda70104374d4f89a3672",
+            "lastState": {},
+            "name": "storage-initializer",
+            "ready": true,
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "100Mi"
+              }
+            },
+            "restartCount": 0,
+            "started": false,
+            "state": {
+              "terminated": {
+                "containerID": "containerd://0af28274e5712510cd3a4bef2e8d0d0b3e4914e4c395cd55ba2e098080aee529",
+                "exitCode": 0,
+                "finishedAt": "2026-10-29T22:02:28Z",
+                "reason": "Completed",
+                "startedAt": "2026-10-29T22:02:15Z"
+              }
+            },
+            "user": {
+              "linux": {
+                "gid": 1000,
+                "supplementalGroups": [
+                  1000
+                ],
+                "uid": 1000
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/mnt/models",
+                "name": "kserve-provision-location"
+              },
+              {
+                "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                "name": "kube-api-access-hh7dg",
+                "readOnly": true,
+                "recursiveReadOnly": "Disabled"
+              }
+            ]
+          }
+        ],
+        "observedGeneration": 1,
+        "phase": "Pending",
+        "podIP": "10.244.0.146",
+        "podIPs": [
+          {
+            "ip": "10.244.0.146"
+          }
+        ],
+        "qosClass": "Burstable",
+        "resources": {
+          "limits": {
+            "cpu": "1",
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "2Gi"
+          }
+        },
+        "startTime": "2026-10-29T22:02:13Z"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "annotations": {
+          "deployment.kubernetes.io/revision": "1",
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T22:02:13Z",
+        "generation": 1,
+        "labels": {
+          "app": "isvc.bad-image-predictor",
+          "component": "predictor",
+          "serving.kserve.io/inferenceservice": "bad-image"
+        },
+        "name": "bad-image-predictor",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "bad-image",
+            "uid": "98b49ba7-1194-45bd-93a7-6a7281bfed77"
+          }
+        ],
+        "resourceVersion": "8229366",
+        "uid": "f2e2aa6b-465d-4fd9-904f-e7f239659210"
+      },
+      "spec": {
+        "progressDeadlineSeconds": 600,
+        "replicas": 1,
+        "revisionHistoryLimit": 10,
+        "selector": {
+          "matchLabels": {
+            "app": "isvc.bad-image-predictor"
+          }
+        },
+        "strategy": {
+          "rollingUpdate": {
+            "maxSurge": "25%",
+            "maxUnavailable": "25%"
+          },
+          "type": "RollingUpdate"
+        },
+        "template": {
+          "metadata": {
+            "annotations": {
+              "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+              "prometheus.kserve.io/path": "/metrics",
+              "prometheus.kserve.io/port": "8080",
+              "serving.kserve.io/deploymentMode": "Standard"
+            },
+            "labels": {
+              "app": "isvc.bad-image-predictor",
+              "component": "predictor",
+              "serving.kserve.io/inferenceservice": "bad-image"
+            },
+            "name": "bad-image-predictor",
+            "namespace": "kserve-test"
+          },
+          "spec": {
+            "containers": [
+              {
+                "args": [
+                  "--model_name=bad-image",
+                  "--model_dir=/mnt/models",
+                  "--http_port=8080"
+                ],
+                "env": [
+                  {
+                    "name": "INFERENCE_SERVICE_NAME",
+                    "value": "bad-image"
+                  }
+                ],
+                "image": "kserve/sklearnserver:v0.0.0-does-not-exist",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "kserve-container",
+                "readinessProbe": {
+                  "failureThreshold": 3,
+                  "periodSeconds": 10,
+                  "successThreshold": 1,
+                  "tcpSocket": {
+                    "port": 8080
+                  },
+                  "timeoutSeconds": 1
+                },
+                "resources": {
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "2Gi"
+                  },
+                  "requests": {
+                    "cpu": "1",
+                    "memory": "2Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "privileged": false,
+                  "runAsNonRoot": true
+                },
+                "terminationMessagePath": "/dev/termination-log",
+                "terminationMessagePolicy": "File"
+              }
+            ],
+            "dnsPolicy": "ClusterFirst",
+            "restartPolicy": "Always",
+            "schedulerName": "default-scheduler",
+            "securityContext": {},
+            "terminationGracePeriodSeconds": 30
+          }
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "lastUpdateTime": "2026-10-29T22:02:13Z",
+            "message": "Deployment does not have minimum availability.",
+            "reason": "MinimumReplicasUnavailable",
+            "status": "False",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "lastUpdateTime": "2026-10-29T22:02:13Z",
+            "message": "ReplicaSet \"bad-image-predictor-5568b94cf8\" is progressing.",
+            "reason": "ReplicaSetUpdated",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0,
+        "unavailableReplicas": 1,
+        "updatedReplicas": 1
+      }
+    },
+    {
+      "apiVersion": "autoscaling/v2",
+      "kind": "HorizontalPodAutoscaler",
+      "metadata": {
+        "annotations": {
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T22:02:13Z",
+        "generation": 1,
+        "labels": {
+          "app": "isvc.bad-image-predictor",
+          "component": "predictor",
+          "serving.kserve.io/inferenceservice": "bad-image"
+        },
+        "name": "bad-image-predictor",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "bad-image",
+            "uid": "98b49ba7-1194-45bd-93a7-6a7281bfed77"
+          }
+        ],
+        "resourceVersion": "8229357",
+        "uid": "fdbfb4f6-83e4-48f5-babd-d73eb558d7ab"
+      },
+      "spec": {
+        "behavior": {
+          "scaleDown": {
+            "policies": [
+              {
+                "periodSeconds": 15,
+                "type": "Percent",
+                "value": 100
+              }
+            ],
+            "selectPolicy": "Max"
+          },
+          "scaleUp": {
+            "policies": [
+              {
+                "periodSeconds": 15,
+                "type": "Pods",
+                "value": 4
+              },
+              {
+                "periodSeconds": 15,
+                "type": "Percent",
+                "value": 100
+              }
+            ],
+            "selectPolicy": "Max",
+            "stabilizationWindowSeconds": 0
+          }
+        },
+        "maxReplicas": 1,
+        "metrics": [
+          {
+            "resource": {
+              "name": "cpu",
+              "target": {
+                "averageUtilization": 80,
+                "type": "Utilization"
+              }
+            },
+            "type": "Resource"
+          }
+        ],
+        "minReplicas": 1,
+        "scaleTargetRef": {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "name": "bad-image-predictor"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "message": "the HPA controller was able to get the target's current scale",
+            "reason": "SucceededGetScale",
+            "status": "True",
+            "type": "AbleToScale"
+          },
+          {
+            "lastTransitionTime": "2026-10-29T22:02:13Z",
+            "message": "the HPA was unable to compute the replica count: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API",
+            "reason": "FailedGetResourceMetric",
+            "status": "False",
+            "type": "ScalingActive"
+          }
+        ],
+        "currentMetrics": [
+          {
+            "type": ""
+          }
+        ],
+        "currentReplicas": 1,
+        "desiredReplicas": 0,
+        "observedGeneration": 1
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "annotations": {
+          "internal.serving.kserve.io/storage-initializer-sourceuri": "gs://kfserving-examples/models/sklearn/1.0/model",
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080",
+          "serving.kserve.io/deploymentMode": "Standard"
+        },
+        "creationTimestamp": "2026-10-29T22:02:13Z",
+        "labels": {
+          "app": "isvc.bad-image-predictor",
+          "component": "predictor",
+          "serving.kserve.io/inferenceservice": "bad-image"
+        },
+        "name": "bad-image-predictor",
+        "namespace": "kserve-test",
+        "ownerReferences": [
+          {
+            "apiVersion": "serving.kserve.io/v1beta1",
+            "blockOwnerDeletion": true,
+            "controller": true,
+            "kind": "InferenceService",
+            "name": "bad-image",
+            "uid": "98b49ba7-1194-45bd-93a7-6a7281bfed77"
+          }
+        ],
+        "resourceVersion": "8229346",
+        "uid": "3a361b0d-e73a-42ec-b1d8-814352d6913c"
+      },
+      "spec": {
+        "clusterIP": "10.104.188.202",
+        "clusterIPs": [
+          "10.104.188.202"
+        ],
+        "internalTrafficPolicy": "Cluster",
+        "ipFamilies": [
+          "IPv4"
+        ],
+        "ipFamilyPolicy": "SingleStack",
+        "ports": [
+          {
+            "name": "bad-image-predictor",
+            "port": 80,
+            "protocol": "TCP",
+            "targetPort": 8080
+          }
+        ],
+        "selector": {
+          "app": "isvc.bad-image-predictor"
+        },
+        "sessionAffinity": "None",
+        "type": "ClusterIP"
+      },
+      "status": {
+        "loadBalancer": {}
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

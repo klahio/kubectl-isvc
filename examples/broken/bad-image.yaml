@@ -1,0 +1,12 @@
+# Deliberately broken sample for the status diagnosis tests (docs/mvp.md section 7): the runtime image tag does not exist
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: bad-image
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: sklearn
+      runtimeVersion: v0.0.0-does-not-exist
+      storageUri: gs://kfserving-examples/models/sklearn/1.0/model

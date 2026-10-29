@@ -1,0 +1,80 @@
+{
+  "apiVersion": "serving.kserve.io/v1beta1",
+  "kind": "InferenceService",
+  "metadata": {
+    "annotations": {
+      "modelFormat": "sklearn",
+      "serving.kserve.io/deploymentMode": "Standard"
+    },
+    "creationTimestamp": "2026-10-29T22:02:13Z",
+    "finalizers": [
+      "inferenceservice.finalizers"
+    ],
+    "generation": 1,
+    "name": "unschedulable",
+    "namespace": "kserve-test",
+    "resourceVersion": "8229495",
+    "uid": "120bbbea-3b7f-40fa-8e8e-684ebe8013b1"
+  },
+  "spec": {
+    "predictor": {
+      "model": {
+        "modelFormat": {
+          "name": "sklearn"
+        },
+        "name": "",
+        "resources": {
+          "limits": {
+            "nvidia.com/gpu": "8"
+          }
+        },
+        "storageUri": "gs://kfserving-examples/models/sklearn/1.0/model"
+      }
+    }
+  },
+  "status": {
+    "clusterServingRuntimeName": "kserve-sklearnserver",
+    "components": {
+      "predictor": {}
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-29T22:02:14Z",
+        "reason": "Predictor ingress not created",
+        "status": "False",
+        "type": "IngressReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:14Z",
+        "message": "Deployment does not have minimum availability.",
+        "reason": "MinimumReplicasUnavailable",
+        "status": "False",
+        "type": "PredictorReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:14Z",
+        "reason": "Predictor ingress not created",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:14Z",
+        "severity": "Info",
+        "status": "False",
+        "type": "Stopped"
+      }
+    ],
+    "deploymentMode": "Standard",
+    "modelStatus": {
+      "copies": {
+        "failedCopies": 0
+      },
+      "states": {
+        "activeModelState": "",
+        "targetModelState": "Pending"
+      },
+      "transitionStatus": "InProgress"
+    },
+    "observedGeneration": 1
+  }
+}

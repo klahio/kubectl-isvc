@@ -1,0 +1,81 @@
+{
+  "apiVersion": "serving.kserve.io/v1beta1",
+  "kind": "InferenceService",
+  "metadata": {
+    "annotations": {
+      "modelFormat": "sklearn",
+      "serving.kserve.io/deploymentMode": "Standard"
+    },
+    "creationTimestamp": "2026-10-29T22:02:13Z",
+    "finalizers": [
+      "inferenceservice.finalizers"
+    ],
+    "generation": 1,
+    "name": "bad-storage",
+    "namespace": "kserve-test",
+    "resourceVersion": "8232501",
+    "uid": "2654f577-e1c3-444d-bd15-5a1acb83890f"
+  },
+  "spec": {
+    "predictor": {
+      "model": {
+        "modelFormat": {
+          "name": "sklearn"
+        },
+        "name": "",
+        "resources": {},
+        "storageUri": "gs://kfserving-examples/models/sklearn/does-not-exist"
+      }
+    }
+  },
+  "status": {
+    "clusterServingRuntimeName": "kserve-sklearnserver",
+    "components": {
+      "predictor": {}
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-29T22:02:13Z",
+        "reason": "Predictor ingress not created",
+        "status": "False",
+        "type": "IngressReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:14Z",
+        "message": "Deployment does not have minimum availability.",
+        "reason": "MinimumReplicasUnavailable",
+        "status": "False",
+        "type": "PredictorReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:06:27Z",
+        "reason": "Predictor ingress not created",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:02:13Z",
+        "severity": "Info",
+        "status": "False",
+        "type": "Stopped"
+      }
+    ],
+    "deploymentMode": "Standard",
+    "modelStatus": {
+      "copies": {
+        "failedCopies": 0
+      },
+      "lastFailureInfo": {
+        "exitCode": 1,
+        "message": "2026-10-29 22:06:13.998 1 storage.initializer INFO [initializer-entrypoint:<module>():17] Initializing, args: (src_uri, dest_path): [('gs://kfserving-examples/models/sklearn/does-not-exist', '/mnt/models')]\n2026-10-29 22:06:13.998 1 storage.initializer INFO [kserve_storage.py:download():331] Copying contents of gs://kfserving-examples/models/sklearn/does-not-exist to local\n2026-10-29 22:06:26.422 1 storage.initializer INFO [kserve_storage.py:_download_gcs():943] Downloading single file to: /mnt/models/does-not-exist\n2026-10-29 22:06:26.470 1 storage.initializer ERROR [storage_errors.py:raise_storage_error():42] GCS error for gs://kfserving-examples/models/sklearn/does-not-exist: 404 GET https://storage.googleapis.com/download/storage/v1/b/kfserving-examples/o/models%2Fsklearn%2Fdoes-not-exist?alt=media: No such object: kfserving-examples/models/sklearn/does-not-exist: ('Request failed with status code', 404, 'Expected one of', <HTTPStatus.OK: 200>, <HTTPStatus.PARTIAL_CONTENT: 206>)\n2026-10-29 22:06:26.470 1 storage.initializer ERROR [initializer-entrypoint:<module>():28] Storage initialization failed: GCS resource 'kfserving-examples' not found.\n",
+        "reason": "ModelLoadFailed"
+      },
+      "states": {
+        "activeModelState": "",
+        "targetModelState": "FailedToLoad"
+      },
+      "transitionStatus": "BlockedByFailedLoad"
+    },
+    "observedGeneration": 1
+  }
+}
