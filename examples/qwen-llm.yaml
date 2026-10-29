@@ -1,0 +1,29 @@
+# Small LLM (Qwen2.5 0.5B Instruct) on the KServe Hugging Face runtime with the vLLM backend.
+# The lab GPU is time-sliced (one 16 GB card shared as 4 nvidia.com/gpu), so vLLM is capped
+# at 30% of GPU memory to leave room for the other GPU workloads.
+# runtimeClassName: the lab's containerd only exposes the GPU through the "nvidia" RuntimeClass.
+# kubectl apply -n kserve-test -f examples/qwen-llm.yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen-llm
+spec:
+  predictor:
+    runtimeClassName: nvidia
+    model:
+      modelFormat:
+        name: huggingface
+      runtimeVersion: v0.21.0-gpu
+      args:
+        - --model_id=Qwen/Qwen2.5-0.5B-Instruct
+        - --gpu-memory-utilization=0.3
+        - --max-model-len=4096
+      resources:
+        requests:
+          cpu: "1"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "4"
+          memory: 8Gi
+          nvidia.com/gpu: "1"

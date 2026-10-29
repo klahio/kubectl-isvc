@@ -1,0 +1,19 @@
+# KServe sample: scikit-learn iris classifier (CPU only).
+# kubectl create namespace kserve-test && kubectl apply -n kserve-test -f examples/sklearn-iris.yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: sklearn-iris
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: gs://kfserving-examples/models/sklearn/1.0/model
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
