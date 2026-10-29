@@ -19,9 +19,10 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 
-	"github.com/klahio/kubectl-isvc/internal/isvc"
-	"github.com/klahio/kubectl-isvc/internal/kube"
-	"github.com/klahio/kubectl-isvc/internal/status"
+	"github.com/klahio/kubectl-kserve/internal/isvc"
+	"github.com/klahio/kubectl-kserve/internal/kube"
+	"github.com/klahio/kubectl-kserve/internal/status"
+	"github.com/klahio/kubectl-kserve/internal/version"
 )
 
 // Port-forward modes of --port-forward.
@@ -169,7 +170,7 @@ func portForward(ctx context.Context, c kube.Clients, snap *status.Snapshot, com
 	}
 	pod := readyPod(pods.Items)
 	if pod == nil {
-		return nil, fmt.Errorf("no ready pod behind svc/%s; run `kubectl isvc status %s` to see why", svc.Name, m.Name)
+		return nil, fmt.Errorf("no ready pod behind svc/%s; run `%s status %s` to see why", svc.Name, version.Command, m.Name)
 	}
 	remote, err := containerPort(pod, svc.Spec.Ports[0].TargetPort)
 	if err != nil {

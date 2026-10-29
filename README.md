@@ -1,31 +1,31 @@
-# kubectl-isvc
+# kubectl-kserve
 
 A kubectl plugin for day-to-day operation of a single [KServe](https://kserve.github.io/website/) **InferenceService**.
 
-One InferenceService turns into many Kubernetes objects: a serving runtime, Deployments, pods with a model-download init container, Services, an Ingress or Gateway API HTTPRoutes, and an autoscaler. When a model is not serving, the reason is usually several objects away. KServe's own status often doesn't help: when a pod fails, the reason it reports is "Predictor ingress not created". `kubectl isvc` answers three questions with one command each:
+One InferenceService turns into many Kubernetes objects: a serving runtime, Deployments, pods with a model-download init container, Services, an Ingress or Gateway API HTTPRoutes, and an autoscaler. When a model is not serving, the reason is usually several objects away. KServe's own status often doesn't help: when a pod fails, the reason it reports is "Predictor ingress not created". `kubectl kserve` answers three questions with one command each:
 
 | Question | Command |
 |---|---|
-| Is my model serving, and if not, why? | `kubectl isvc status NAME` |
-| Does it actually answer a request? | `kubectl isvc test NAME -f input.json` |
-| What did its containers print? | `kubectl isvc logs NAME` |
+| Is my model serving, and if not, why? | `kubectl kserve status NAME` |
+| Does it actually answer a request? | `kubectl kserve test NAME -f input.json` |
+| What did its containers print? | `kubectl kserve logs NAME` |
 
-`isvc` is the short name KServe registers for InferenceService, so the plugin reads like `kubectl get isvc`.
+Commands take a resource the way kubectl does: `NAME` or `isvc/NAME` is an InferenceService (`isvc` is the short name KServe registers for it). Other KServe resources, such as `llmisvc/NAME` for LLMInferenceService, are planned for later versions; see [docs/mvp.md](docs/mvp.md).
 
 ## Install
 
 With [krew](https://krew.sigs.k8s.io/) (once the plugin is in the krew index):
 
 ```bash
-kubectl krew install isvc
+kubectl krew install kserve
 ```
 
-From a release: download the archive for your platform from [Releases](https://github.com/klahio/kubectl-isvc/releases), then put `kubectl-isvc` on your `PATH`.
+From a release: download the archive for your platform from [Releases](https://github.com/klahio/kubectl-kserve/releases), then put `kubectl-kserve` on your `PATH`.
 
 From source (Go 1.26 or newer):
 
 ```bash
-go install github.com/klahio/kubectl-isvc@latest
+go install github.com/klahio/kubectl-kserve@latest
 ```
 
 ## Usage
@@ -33,7 +33,7 @@ go install github.com/klahio/kubectl-isvc@latest
 ### status: summary and diagnosis
 
 ```console
-$ kubectl isvc status sklearn-canary -n kserve-test
+$ kubectl kserve status sklearn-canary -n kserve-test
 sklearn-canary   namespace: kserve-test   mode: Standard   Ready   age: 14m
 
 Endpoints
@@ -63,7 +63,7 @@ Conditions
 When something is wrong, `status` follows the chain InferenceService → Deployment → pod → container and names the cause:
 
 ```console
-$ kubectl isvc status bad-storage -n kserve-test
+$ kubectl kserve status bad-storage -n kserve-test
 ...
 Diagnosis
   ✗ Model download failed   predictor pod/bad-storage-predictor-f4cfc7765-wxst8
@@ -95,7 +95,7 @@ What it diagnoses:
 ### test: smoke-test inference request
 
 ```console
-$ kubectl isvc test sklearn-iris -n kserve-test -f examples/iris-input.json
+$ kubectl kserve test sklearn-iris -n kserve-test -f examples/iris-input.json
 POST https://sklearn-iris-kserve-test.k8s.internal/v1/models/sklearn-iris:predict
   connected to 192.168.4.30:443
   protocol v1 (input has "instances") · via HTTPRoute sklearn-iris at 192.168.4.30:443
@@ -125,10 +125,10 @@ You don't need to know the protocol either. `test` uses the first rule that give
 ### logs: the right containers, without pod names
 
 ```bash
-kubectl isvc logs sklearn-iris                # model server of every predictor pod
-kubectl isvc logs sklearn-iris --init         # model download (storage-initializer)
-kubectl isvc logs sklearn-iris -c all -f      # every component; follows new and restarted pods
-kubectl isvc logs sklearn-iris -p             # the previous, crashed instance
+kubectl kserve logs sklearn-iris                # model server of every predictor pod
+kubectl kserve logs sklearn-iris --init         # model download (storage-initializer)
+kubectl kserve logs sklearn-iris -c all -f      # every component; follows new and restarted pods
+kubectl kserve logs sklearn-iris -p             # the previous, crashed instance
 ```
 
 When more than one container is shown, each line is prefixed with `[component/pod/container]`. `--since`, `--tail` (default 100 lines; `-1` for all) and `--prefix auto|true|false` work as you would expect.
@@ -157,7 +157,7 @@ The plugin reads KServe objects as unstructured data and checks for fields rathe
 
 ## Permissions
 
-`kubectl isvc` never creates, changes or deletes cluster objects. It needs:
+`kubectl kserve` never creates, changes or deletes cluster objects. It needs:
 - `get` and `list` on `inferenceservices`, `servingruntimes`, `clusterservingruntimes`, `pods`, `pods/log`, `deployments`, `horizontalpodautoscalers`, `services`, `ingresses`, `ingressclasses`, `httproutes`, `gateways` and `events`
 - `create` on `pods/portforward`, for `test`
 

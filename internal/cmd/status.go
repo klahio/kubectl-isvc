@@ -16,8 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	"sigs.k8s.io/yaml"
 
-	"github.com/klahio/kubectl-isvc/internal/kube"
-	"github.com/klahio/kubectl-isvc/internal/status"
+	"github.com/klahio/kubectl-kserve/internal/kube"
+	"github.com/klahio/kubectl-kserve/internal/status"
 )
 
 const (
@@ -37,14 +37,18 @@ type statusOptions struct {
 func newStatusCommand(root *rootOptions) *cobra.Command {
 	o := &statusOptions{rootOptions: root}
 	c := &cobra.Command{
-		Use:   "status NAME",
+		Use:   "status [isvc/]NAME",
 		Short: "Show a one-screen summary of an InferenceService and diagnose why it is not working",
 		Example: fmt.Sprintf(`  %[1]s%[2]s status sklearn-iris -n kserve-test
   %[1]s%[2]s status sklearn-iris -o json
   %[1]s%[2]s status sklearn-iris --exit-code   # exit 1 when not Ready`, commandPrefix(), PluginName),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.run(cmd.Context(), args[0])
+			name, err := inferenceServiceName(args[0])
+			if err != nil {
+				return err
+			}
+			return o.run(cmd.Context(), name)
 		},
 	}
 	c.Flags().StringVarP(&o.output, "output", "o", "", "Output format: json or yaml (a structured summary). Default is human-readable")

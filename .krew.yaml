@@ -1,10 +1,10 @@
 apiVersion: krew.googlecontainertools.github.com/v1alpha2
 kind: Plugin
 metadata:
-  name: isvc
+  name: kserve
 spec:
   version: {{ .TagName }}
-  homepage: https://github.com/klahio/kubectl-isvc
+  homepage: https://github.com/klahio/kubectl-kserve
   shortDescription: Diagnose, smoke-test and read logs of KServe InferenceServices
   description: |
     A KServe InferenceService fans out into a serving runtime, Deployments,
@@ -25,72 +25,72 @@ spec:
     Supports KServe v0.16 to v0.21 in Standard mode, with Ingress or Gateway
     API, including canary rollouts. Read-only: it never changes the cluster.
   caveats: |
-    The plugin only reads cluster objects. `kubectl isvc test` also needs
+    The plugin only reads cluster objects. `kubectl kserve test` also needs
     permission to create pods/portforward when it falls back to port-forward.
   platforms:
   - selector:
       matchLabels:
         os: linux
         arch: amd64
-    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_linux_amd64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/klahio/kubectl-kserve/releases/download/{{ .TagName }}/kubectl-kserve_{{ .TagName }}_linux_amd64.tar.gz" .TagName }}
     files:
-    - from: kubectl-isvc
+    - from: kubectl-kserve
       to: .
     - from: LICENSE
       to: .
-    bin: kubectl-isvc
+    bin: kubectl-kserve
   - selector:
       matchLabels:
         os: linux
         arch: arm64
-    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_linux_arm64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/klahio/kubectl-kserve/releases/download/{{ .TagName }}/kubectl-kserve_{{ .TagName }}_linux_arm64.tar.gz" .TagName }}
     files:
-    - from: kubectl-isvc
+    - from: kubectl-kserve
       to: .
     - from: LICENSE
       to: .
-    bin: kubectl-isvc
+    bin: kubectl-kserve
   - selector:
       matchLabels:
         os: darwin
         arch: amd64
-    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_darwin_amd64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/klahio/kubectl-kserve/releases/download/{{ .TagName }}/kubectl-kserve_{{ .TagName }}_darwin_amd64.tar.gz" .TagName }}
     files:
-    - from: kubectl-isvc
+    - from: kubectl-kserve
       to: .
     - from: LICENSE
       to: .
-    bin: kubectl-isvc
+    bin: kubectl-kserve
   - selector:
       matchLabels:
         os: darwin
         arch: arm64
-    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_darwin_arm64.tar.gz" .TagName }}
+    {{addURIAndSha "https://github.com/klahio/kubectl-kserve/releases/download/{{ .TagName }}/kubectl-kserve_{{ .TagName }}_darwin_arm64.tar.gz" .TagName }}
     files:
-    - from: kubectl-isvc
+    - from: kubectl-kserve
       to: .
     - from: LICENSE
       to: .
-    bin: kubectl-isvc
+    bin: kubectl-kserve
   - selector:
       matchLabels:
         os: windows
         arch: amd64
-    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_windows_amd64.zip" .TagName }}
+    {{addURIAndSha "https://github.com/klahio/kubectl-kserve/releases/download/{{ .TagName }}/kubectl-kserve_{{ .TagName }}_windows_amd64.zip" .TagName }}
     files:
-    - from: kubectl-isvc.exe
+    - from: kubectl-kserve.exe
       to: .
     - from: LICENSE
       to: .
-    bin: kubectl-isvc.exe
+    bin: kubectl-kserve.exe
   - selector:
       matchLabels:
         os: windows
         arch: arm64
-    {{addURIAndSha "https://github.com/klahio/kubectl-isvc/releases/download/{{ .TagName }}/kubectl-isvc_{{ .TagName }}_windows_arm64.zip" .TagName }}
+    {{addURIAndSha "https://github.com/klahio/kubectl-kserve/releases/download/{{ .TagName }}/kubectl-kserve_{{ .TagName }}_windows_arm64.zip" .TagName }}
     files:
-    - from: kubectl-isvc.exe
+    - from: kubectl-kserve.exe
       to: .
     - from: LICENSE
       to: .
-    bin: kubectl-isvc.exe
+    bin: kubectl-kserve.exe

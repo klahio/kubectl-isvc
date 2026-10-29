@@ -13,11 +13,11 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 
-	"github.com/klahio/kubectl-isvc/internal/version"
+	"github.com/klahio/kubectl-kserve/internal/version"
 )
 
-// PluginName is the only place the plugin's name is spelled out, so a rename (see docs/mvp.md, decision 5) stays cheap.
-const PluginName = "isvc"
+// PluginName is the plugin's name; see version.Name.
+const PluginName = version.Name
 
 // Exit codes, as defined in docs/mvp.md section 3.
 const (
@@ -79,7 +79,7 @@ func newRootCommand(streams genericiooptions.IOStreams) *cobra.Command {
 
 	root := &cobra.Command{
 		Use: PluginName,
-		// cobra takes the command name from the first word of Use; the display name makes help read "kubectl isvc".
+		// cobra takes the command name from the first word of Use; the display name makes help read "kubectl kserve".
 		Annotations:   map[string]string{cobra.CommandDisplayNameAnnotation: commandPrefix() + PluginName},
 		Short:         "Operate a single KServe InferenceService",
 		Version:       version.String(),
@@ -106,7 +106,7 @@ func newRootCommand(streams genericiooptions.IOStreams) *cobra.Command {
 	return root
 }
 
-// commandPrefix makes help text read "kubectl isvc ..." when the binary runs as a kubectl plugin.
+// commandPrefix makes help text read "kubectl kserve ..." when the binary runs as a kubectl plugin.
 func commandPrefix() string {
 	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
 		return "kubectl "

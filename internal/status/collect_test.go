@@ -10,8 +10,8 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 
-	"github.com/klahio/kubectl-isvc/internal/isvc"
-	"github.com/klahio/kubectl-isvc/internal/kube"
+	"github.com/klahio/kubectl-kserve/internal/isvc"
+	"github.com/klahio/kubectl-kserve/internal/kube"
 )
 
 func fakeClients(f *fixture) kube.Clients {

@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/klahio/kubectl-isvc/internal/isvc"
-	"github.com/klahio/kubectl-isvc/internal/status"
+	"github.com/klahio/kubectl-kserve/internal/isvc"
+	"github.com/klahio/kubectl-kserve/internal/status"
 )
 
 // Protocol is an HTTP inference protocol.

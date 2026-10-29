@@ -1,4 +1,4 @@
-module github.com/klahio/kubectl-isvc
+module github.com/klahio/kubectl-kserve
 
 go 1.26.0
 

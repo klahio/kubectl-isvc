@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klahio/kubectl-isvc/internal/logs"
+	"github.com/klahio/kubectl-kserve/internal/logs"
 )
 
 type logsOptions struct {
@@ -24,7 +24,7 @@ type logsOptions struct {
 func newLogsCommand(root *rootOptions) *cobra.Command {
 	o := &logsOptions{rootOptions: root}
 	c := &cobra.Command{
-		Use:   "logs NAME",
+		Use:   "logs [isvc/]NAME",
 		Short: "Show logs of an InferenceService's containers without looking up pod or container names",
 		Example: fmt.Sprintf(`  %[1]s%[2]s logs sklearn-iris                  # model server of every predictor pod
   %[1]s%[2]s logs sklearn-iris --init           # model download (storage-initializer)
@@ -32,7 +32,11 @@ func newLogsCommand(root *rootOptions) *cobra.Command {
   %[1]s%[2]s logs sklearn-iris -p               # the previous, crashed instance`, commandPrefix(), PluginName),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.run(cmd.Context(), args[0])
+			name, err := inferenceServiceName(args[0])
+			if err != nil {
+				return err
+			}
+			return o.run(cmd.Context(), name)
 		},
 	}
 	f := c.Flags()

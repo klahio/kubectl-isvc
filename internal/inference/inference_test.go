@@ -15,9 +15,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/klahio/kubectl-isvc/internal/isvc"
-	"github.com/klahio/kubectl-isvc/internal/kube"
-	"github.com/klahio/kubectl-isvc/internal/status"
+	"github.com/klahio/kubectl-kserve/internal/isvc"
+	"github.com/klahio/kubectl-kserve/internal/kube"
+	"github.com/klahio/kubectl-kserve/internal/status"
 )
 
 const (

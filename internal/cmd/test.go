@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/klahio/kubectl-isvc/internal/inference"
-	"github.com/klahio/kubectl-isvc/internal/status"
+	"github.com/klahio/kubectl-kserve/internal/inference"
+	"github.com/klahio/kubectl-kserve/internal/status"
 )
 
 type testOptions struct {
@@ -32,14 +32,18 @@ type testOptions struct {
 func newTestCommand(root *rootOptions) *cobra.Command {
 	o := &testOptions{rootOptions: root}
 	c := &cobra.Command{
-		Use:   "test NAME -f INPUT.json",
+		Use:   "test [isvc/]NAME -f INPUT.json",
 		Short: "Send one smoke-test inference request, finding the address and protocol automatically",
 		Example: fmt.Sprintf(`  %[1]s%[2]s test sklearn-iris -f input.json
   %[1]s%[2]s test sklearn-iris -f input.json -o summary
   cat input.json | %[1]s%[2]s test sklearn-iris -f - -o raw | jq .predictions`, commandPrefix(), PluginName),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.run(cmd.Context(), args[0])
+			name, err := inferenceServiceName(args[0])
+			if err != nil {
+				return err
+			}
+			return o.run(cmd.Context(), name)
 		},
 	}
 	f := c.Flags()

@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/klahio/kubectl-isvc/internal/isvc"
+	"github.com/klahio/kubectl-kserve/internal/isvc"
 )
 
 // ComponentAll selects predictor, transformer and explainer pods together.
