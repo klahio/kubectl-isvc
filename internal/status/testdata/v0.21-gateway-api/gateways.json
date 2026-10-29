@@ -1,0 +1,167 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "Gateway",
+      "metadata": {
+        "annotations": {},
+        "creationTimestamp": "2026-09-19T17:23:25Z",
+        "generation": 2,
+        "name": "lab-gateway",
+        "namespace": "gateway",
+        "resourceVersion": "8256170",
+        "uid": "6f2cfdc4-9c37-4233-b4e7-f973b15f9efd"
+      },
+      "spec": {
+        "gatewayClassName": "cilium",
+        "listeners": [
+          {
+            "allowedRoutes": {
+              "namespaces": {
+                "from": "Same"
+              }
+            },
+            "hostname": "*.k8s.internal",
+            "name": "http",
+            "port": 80,
+            "protocol": "HTTP"
+          },
+          {
+            "allowedRoutes": {
+              "namespaces": {
+                "from": "All"
+              }
+            },
+            "hostname": "*.k8s.internal",
+            "name": "https",
+            "port": 443,
+            "protocol": "HTTPS",
+            "tls": {
+              "certificateRefs": [
+                {
+                  "group": "",
+                  "kind": "Secret",
+                  "name": "wildcard-lab-tls"
+                }
+              ],
+              "mode": "Terminate"
+            }
+          }
+        ]
+      },
+      "status": {
+        "addresses": [
+          {
+            "type": "IPAddress",
+            "value": "192.168.4.30"
+          }
+        ],
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-19T17:39:52Z",
+            "message": "Gateway successfully scheduled",
+            "observedGeneration": 2,
+            "reason": "Accepted",
+            "status": "True",
+            "type": "Accepted"
+          },
+          {
+            "lastTransitionTime": "2026-10-29T22:43:29Z",
+            "message": "Gateway Programmed",
+            "observedGeneration": 2,
+            "reason": "Programmed",
+            "status": "True",
+            "type": "Programmed"
+          }
+        ],
+        "listeners": [
+          {
+            "attachedRoutes": 1,
+            "conditions": [
+              {
+                "lastTransitionTime": "2026-10-29T22:43:29Z",
+                "message": "Resolved Refs",
+                "observedGeneration": 2,
+                "reason": "ResolvedRefs",
+                "status": "True",
+                "type": "ResolvedRefs"
+              },
+              {
+                "lastTransitionTime": "2026-10-29T22:43:29Z",
+                "message": "Listener Accepted",
+                "observedGeneration": 2,
+                "reason": "Accepted",
+                "status": "True",
+                "type": "Accepted"
+              },
+              {
+                "lastTransitionTime": "2026-10-29T22:43:29Z",
+                "message": "Listener Programmed",
+                "observedGeneration": 2,
+                "reason": "Programmed",
+                "status": "True",
+                "type": "Programmed"
+              }
+            ],
+            "name": "http",
+            "supportedKinds": [
+              {
+                "group": "gateway.networking.k8s.io",
+                "kind": "HTTPRoute"
+              },
+              {
+                "group": "gateway.networking.k8s.io",
+                "kind": "GRPCRoute"
+              }
+            ]
+          },
+          {
+            "attachedRoutes": 20,
+            "conditions": [
+              {
+                "lastTransitionTime": "2026-10-29T22:43:29Z",
+                "message": "Resolved Refs",
+                "observedGeneration": 2,
+                "reason": "ResolvedRefs",
+                "status": "True",
+                "type": "ResolvedRefs"
+              },
+              {
+                "lastTransitionTime": "2026-10-29T22:43:29Z",
+                "message": "Listener Accepted",
+                "observedGeneration": 2,
+                "reason": "Accepted",
+                "status": "True",
+                "type": "Accepted"
+              },
+              {
+                "lastTransitionTime": "2026-10-29T22:43:29Z",
+                "message": "Listener Programmed",
+                "observedGeneration": 2,
+                "reason": "Programmed",
+                "status": "True",
+                "type": "Programmed"
+              }
+            ],
+            "name": "https",
+            "supportedKinds": [
+              {
+                "group": "gateway.networking.k8s.io",
+                "kind": "HTTPRoute"
+              },
+              {
+                "group": "gateway.networking.k8s.io",
+                "kind": "GRPCRoute"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

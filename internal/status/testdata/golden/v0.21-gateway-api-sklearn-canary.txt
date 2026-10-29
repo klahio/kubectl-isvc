@@ -1,0 +1,27 @@
+sklearn-canary   namespace: kserve-test   mode: Standard   Ready   age: 57m
+
+Endpoints
+  external     https://sklearn-canary-kserve-test.k8s.internal
+  in-cluster   http://sklearn-canary-predictor.kserve-test.svc.cluster.local
+  httproute    sklearn-canary   via Gateway gateway/lab-gateway   address: 192.168.4.30
+  httproute    sklearn-canary-predictor   via Gateway gateway/lab-gateway   address: 192.168.4.30
+
+Model
+  format    sklearn
+  storage   gs://kfserving-examples/models/sklearn/1.0/model
+  runtime   kserve-sklearnserver (ClusterServingRuntime)   protocols: v1, v2
+  state     Loaded (UpToDate)
+
+Components
+  predictor   Ready   replicas 1/1   autoscaling 1–1 (cpu 80%)
+
+Canary
+  stable   80%
+  v2       20%   Ready   replicas 1/1
+
+Conditions
+  Ready                  True
+  CanaryPredictorReady   True   AllCanariesReady
+  IngressReady           True
+  PredictorReady         True   NewReplicaSetAvailable: ReplicaSet "sklearn-canary-predictor-766dbf95c9" has successfully progressed.
+  Stopped                False

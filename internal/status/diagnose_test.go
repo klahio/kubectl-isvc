@@ -147,3 +147,43 @@ func TestIsNoise(t *testing.T) {
 		t.Error("scheduling failure is not noise")
 	}
 }
+
+// After KServe was switched to Gateway API on the lab cluster, it created HTTPRoutes but kept the old Ingress.
+func TestDiagnoseGatewayAPILabCluster(t *testing.T) {
+	s := loadFixtureFrom(t, fixtureGatewayAPI, "sklearn-iris").snapshot(t)
+	if len(s.HTTPRoutes) != 2 || len(s.Ingresses) != 1 {
+		t.Fatalf("routes=%d ingresses=%d, want 2 and the leftover 1", len(s.HTTPRoutes), len(s.Ingresses))
+	}
+	findings := Diagnose(s)
+	if len(findings) != 1 || findings[0].Title != "Leftover Ingress" || findings[0].Severity != SeverityWarning {
+		t.Fatalf("want only the leftover Ingress warning, got %+v", findings)
+	}
+	sum := Summarize(s, findings)
+	if !sum.Endpoints.Routable {
+		t.Error("a leftover Ingress must not make the HTTPRoute-published address unroutable")
+	}
+	for _, e := range sum.Endpoints.Exposure {
+		if e.Kind == "Ingress" && !e.Leftover {
+			t.Error("the Ingress must be marked leftover")
+		}
+		if e.Kind == "HTTPRoute" && e.Address != "192.168.4.30" {
+			t.Errorf("HTTPRoute %s: Gateway address = %q", e.Name, e.Address)
+		}
+	}
+}
+
+// Stable and canary objects share the component label; only the app label tells them apart.
+func TestSummarizeCanary(t *testing.T) {
+	s := loadFixtureFrom(t, fixtureGatewayAPI, "sklearn-canary").snapshot(t)
+	sum := Summarize(s, Diagnose(s))
+	if got := sum.Components[0]; got.ReadyReplicas != 1 || got.Replicas != 1 {
+		t.Errorf("stable predictor replicas = %d/%d, want 1/1 (not counting the canary)", got.ReadyReplicas, got.Replicas)
+	}
+	if sum.Canary == nil || sum.Canary.StablePercent != 80 || len(sum.Canary.Canaries) != 1 {
+		t.Fatalf("canary = %+v", sum.Canary)
+	}
+	c := sum.Canary.Canaries[0]
+	if c.Name != "v2" || c.TrafficPercent != 20 || c.Ready != "True" || c.Replicas != 1 {
+		t.Errorf("canary v2 = %+v", c)
+	}
+}

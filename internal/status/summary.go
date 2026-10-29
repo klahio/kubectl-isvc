@@ -46,6 +46,8 @@ type Exposure struct {
 	Name    string `json:"name"`
 	Via     string `json:"via,omitempty"` // IngressClass name, or Gateway namespace/name
 	Address string `json:"address,omitempty"`
+	// Leftover marks an Ingress that no longer publishes the external address (see IsLeftoverIngress).
+	Leftover bool `json:"leftover,omitempty"`
 }
 
 // ComponentState is the state of a predictor, transformer or explainer.
@@ -68,8 +70,16 @@ type Autoscaling struct {
 // CanarySplit shows how traffic is shared between the stable predictor and the canaries.
 type CanarySplit struct {
 	StablePercent int64         `json:"stablePercent"`
-	Canaries      []isvc.Canary `json:"canaries"`
-	Ready         string        `json:"ready"`
+	Canaries      []CanaryState `json:"canaries"`
+	// Ready is the CanaryPredictorReady condition, covering all canaries.
+	Ready string `json:"ready"`
+}
+
+// CanaryState is one canary predictor with its replicas.
+type CanaryState struct {
+	isvc.Canary
+	ReadyReplicas int32 `json:"readyReplicas"`
+	Replicas      int32 `json:"replicas"`
 }
 
 // Summarize turns a snapshot and its findings into the summary.
@@ -114,9 +124,12 @@ func Summarize(s *Snapshot, findings []Finding) *Summary {
 	}
 
 	if len(m.Canaries) > 0 {
-		split := &CanarySplit{StablePercent: 100, Canaries: m.Canaries, Ready: "Unknown"}
+		split := &CanarySplit{StablePercent: 100, Ready: "Unknown"}
 		for _, c := range m.Canaries {
 			split.StablePercent -= c.TrafficPercent
+			cs := CanaryState{Canary: c}
+			cs.ReadyReplicas, cs.Replicas = replicas(s, "predictor", c.Name)
+			split.Canaries = append(split.Canaries, cs)
 		}
 		if c, ok := m.Condition("CanaryPredictorReady"); ok {
 			split.Ready = c.Status
@@ -131,17 +144,9 @@ func componentState(s *Snapshot, name string) ComponentState {
 	if c, ok := s.ISVC.Condition(strings.ToUpper(name[:1]) + name[1:] + "Ready"); ok {
 		cs.Ready, cs.Reason = c.Status, c.Reason
 	}
-	for _, d := range s.Deployments {
-		if d.Labels[isvc.LabelComponent] != name {
-			continue
-		}
-		cs.ReadyReplicas += d.Status.ReadyReplicas
-		if d.Spec.Replicas != nil {
-			cs.Replicas += *d.Spec.Replicas
-		}
-	}
+	cs.ReadyReplicas, cs.Replicas = replicas(s, name, "")
 	for _, h := range s.Autoscalers {
-		if h.Labels[isvc.LabelComponent] != name {
+		if h.Labels[isvc.LabelComponent] != name || s.ISVC.CanaryOf(h.Labels) != "" {
 			continue
 		}
 		a := &Autoscaling{Max: h.Spec.MaxReplicas, Min: 1, Target: metricTarget(h)}
@@ -151,6 +156,21 @@ func componentState(s *Snapshot, name string) ComponentState {
 		cs.Autoscaling = a
 	}
 	return cs
+}
+
+// replicas sums the Deployments of a component, or of one of its canaries; stable and canary objects share the
+// component label and differ only in the app label.
+func replicas(s *Snapshot, component, canary string) (ready, desired int32) {
+	for _, d := range s.Deployments {
+		if d.Labels[isvc.LabelComponent] != component || s.ISVC.CanaryOf(d.Labels) != canary {
+			continue
+		}
+		ready += d.Status.ReadyReplicas
+		if d.Spec.Replicas != nil {
+			desired += *d.Spec.Replicas
+		}
+	}
+	return ready, desired
 }
 
 func metricTarget(h autoscalingv2.HorizontalPodAutoscaler) string {
@@ -176,7 +196,7 @@ func metricTarget(h autoscalingv2.HorizontalPodAutoscaler) string {
 func exposures(s *Snapshot) []Exposure {
 	var out []Exposure
 	for _, ing := range s.Ingresses {
-		e := Exposure{Kind: "Ingress", Name: ing.Name}
+		e := Exposure{Kind: "Ingress", Name: ing.Name, Leftover: IsLeftoverIngress(ing, s.ISVC.URL)}
 		if ing.Spec.IngressClassName != nil {
 			e.Via = "IngressClass " + *ing.Spec.IngressClassName
 		}

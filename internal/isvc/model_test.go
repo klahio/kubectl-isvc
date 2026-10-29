@@ -130,3 +130,12 @@ func TestConditionsReadyFirst(t *testing.T) {
 		}
 	}
 }
+
+func TestCanaryOf(t *testing.T) {
+	s := &InferenceService{Name: "m", Canaries: []Canary{{Name: "v2"}}}
+	stable := map[string]string{LabelApp: "isvc.m-predictor", LabelComponent: "predictor"}
+	canary := map[string]string{LabelApp: "isvc.m-v2-predictor", LabelComponent: "predictor"}
+	if s.CanaryOf(stable) != "" || s.CanaryOf(canary) != "v2" || s.CanaryOf(map[string]string{}) != "" {
+		t.Errorf("stable=%q canary=%q unlabeled=%q", s.CanaryOf(stable), s.CanaryOf(canary), s.CanaryOf(map[string]string{}))
+	}
+}

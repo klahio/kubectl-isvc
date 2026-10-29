@@ -16,8 +16,11 @@ import (
 	"github.com/klahio/kubectl-isvc/internal/isvc"
 )
 
-// Fixtures are captured from real clusters with hack/capture-fixtures.sh, one directory per KServe version.
-const fixtureVersion = "v0.21"
+// Fixtures are captured from real clusters with hack/capture-fixtures.sh, one directory per KServe version and setup.
+const (
+	fixtureVersion    = "v0.21"             // Kubernetes Ingress (KServe's default)
+	fixtureGatewayAPI = "v0.21-gateway-api" // KServe switched to Gateway API on the lab Gateway
+)
 
 // fixture holds the typed and unstructured objects captured around one InferenceService.
 type fixture struct {
@@ -35,7 +38,12 @@ type fixture struct {
 
 func loadFixture(t *testing.T, name string) *fixture {
 	t.Helper()
-	root := filepath.Join("testdata", fixtureVersion)
+	return loadFixtureFrom(t, fixtureVersion, name)
+}
+
+func loadFixtureFrom(t *testing.T, set, name string) *fixture {
+	t.Helper()
+	root := filepath.Join("testdata", set)
 	dir := filepath.Join(root, name)
 
 	f := &fixture{isvc: &unstructured.Unstructured{}}

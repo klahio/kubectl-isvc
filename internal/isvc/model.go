@@ -91,6 +91,32 @@ type Component struct {
 type Canary struct {
 	Name           string `json:"name"`
 	TrafficPercent int64  `json:"trafficPercent"`
+	// Ready comes from status.canaryStatuses: "True", "False" or "Unknown" when KServe has not reported it yet.
+	Ready string `json:"ready"`
+}
+
+// LabelApp is the label that tells a component's objects apart from those of its canaries: KServe sets it to
+// "isvc.<name>-<component>" for the stable component and "isvc.<name>-<canary>-<component>" for a canary.
+const LabelApp = "app"
+
+// AppLabel returns the "app" label value of a component, or of one of its canaries when canary is not empty.
+func AppLabel(name, component, canary string) string {
+	if canary == "" {
+		return "isvc." + name + "-" + component
+	}
+	return "isvc." + name + "-" + canary + "-" + component
+}
+
+// CanaryOf returns the canary that an object with these labels belongs to, or "" for the stable component.
+// Objects without the app label are treated as stable.
+func (s *InferenceService) CanaryOf(labels map[string]string) string {
+	app, component := labels[LabelApp], labels[LabelComponent]
+	for _, c := range s.Canaries {
+		if app == AppLabel(s.Name, component, c.Name) {
+			return c.Name
+		}
+	}
+	return ""
 }
 
 // InferenceService is the plugin's view of one InferenceService.
@@ -177,8 +203,20 @@ func FromUnstructured(u *unstructured.Unstructured) (*InferenceService, error) {
 		if !ok {
 			continue
 		}
-		percent, _, _ := unstructured.NestedInt64(m, "trafficPercent")
-		s.Canaries = append(s.Canaries, Canary{Name: str(m, "predictor", "name"), TrafficPercent: percent})
+		s.Canaries = append(s.Canaries, Canary{Name: str(m, "predictor", "name"), TrafficPercent: integer(m, "trafficPercent"), Ready: "Unknown"})
+	}
+	statuses, _, _ := unstructured.NestedSlice(obj, "status", "canaryStatuses")
+	for _, st := range statuses {
+		m, ok := st.(map[string]any)
+		if !ok {
+			continue
+		}
+		ready, found, _ := unstructured.NestedBool(m, "ready")
+		for i := range s.Canaries {
+			if s.Canaries[i].Name == str(m, "name") && found {
+				s.Canaries[i].Ready = map[bool]string{true: "True", false: "False"}[ready]
+			}
+		}
 	}
 
 	// Every supported version (v0.16+) records status.deploymentMode once the controller has seen the object.
@@ -215,7 +253,7 @@ func modelStatus(obj map[string]any) ModelStatus {
 		TransitionStatus: str(obj, "status", "modelStatus", "transitionStatus"),
 	}
 	if info, found, _ := unstructured.NestedMap(obj, "status", "modelStatus", "lastFailureInfo"); found {
-		exit, _, _ := unstructured.NestedInt64(info, "exitCode")
+		exit := integer(info, "exitCode")
 		ms.LastFailure = &Failure{
 			Reason:   str(info, "reason"),
 			Message:  str(info, "message"),
@@ -254,6 +292,25 @@ func conditions(obj map[string]any) []Condition {
 		return out[i].Type < out[j].Type
 	})
 	return out
+}
+
+// integer reads a nested number. Objects from the API server hold int64, but plain encoding/json decoding (for example
+// of saved objects) produces float64, which unstructured.NestedInt64 rejects.
+func integer(obj map[string]any, fields ...string) int64 {
+	v, found, _ := unstructured.NestedFieldNoCopy(obj, fields...)
+	if !found {
+		return 0
+	}
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
 }
 
 // str reads a nested string field and returns "" when it is missing or not a string.

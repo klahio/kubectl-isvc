@@ -1,0 +1,1376 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "autogluonserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-autogluonserver",
+        "resourceVersion": "8174558",
+        "uid": "f5285e23-3aae-4540-9b83-494b77db0b8d"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080"
+            ],
+            "image": "kserve/autogluonserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "autogluon",
+            "priority": 1,
+            "version": "1"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "huggingfaceserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-huggingfaceserver",
+        "resourceVersion": "8174557",
+        "uid": "31cb1381-5e02-47af-9e34-5f64afb0eb6a"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}"
+            ],
+            "env": [
+              {
+                "name": "LMCACHE_USE_EXPERIMENTAL",
+                "value": "True"
+              }
+            ],
+            "image": "kserve/huggingfaceserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/dev/shm",
+                "name": "devshm"
+              }
+            ]
+          }
+        ],
+        "disabled": false,
+        "hostIPC": false,
+        "protocolVersions": [
+          "v2",
+          "v1"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "huggingface",
+            "priority": 1,
+            "version": "1"
+          }
+        ],
+        "volumes": [
+          {
+            "emptyDir": {
+              "medium": "Memory"
+            },
+            "name": "devshm"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "huggingfaceserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-huggingfaceserver-multinode",
+        "resourceVersion": "8174560",
+        "uid": "76597ae6-0775-41bd-9cd9-2d25c6992ba4"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}"
+            ],
+            "command": [
+              "bash",
+              "-c",
+              "export MODEL=${MODEL_ID}\nif [[ ! -z ${MODEL_DIR} ]]\nthen\n  export MODEL=${MODEL_DIR}\nfi\n\nexport RAY_ADDRESS=${POD_IP}:${RAY_PORT}\nray start --head --disable-usage-stats --include-dashboard false \npython ./huggingfaceserver/health_check.py registered_nodes --retries 200  --probe_name runtime_start\n\npython -m huggingfaceserver --model_dir=${MODEL} --tensor-parallel-size=${TENSOR_PARALLEL_SIZE} --pipeline-parallel-size=${PIPELINE_PARALLEL_SIZE} $0 $@        \n"
+            ],
+            "env": [
+              {
+                "name": "RAY_PORT",
+                "value": "6379"
+              },
+              {
+                "name": "POD_NAMESPACE",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "metadata.namespace"
+                  }
+                }
+              },
+              {
+                "name": "POD_IP",
+                "valueFrom": {
+                  "fieldRef": {
+                    "fieldPath": "status.podIP"
+                  }
+                }
+              },
+              {
+                "name": "VLLM_CONFIG_ROOT",
+                "value": "/tmp"
+              },
+              {
+                "name": "HF_HUB_CACHE",
+                "value": "/tmp"
+              }
+            ],
+            "image": "kserve/huggingfaceserver:v0.21.0-gpu",
+            "imagePullPolicy": "IfNotPresent",
+            "livenessProbe": {
+              "exec": {
+                "command": [
+                  "bash",
+                  "-c",
+                  "python ./huggingfaceserver/health_check.py registered_node_and_runtime_health --health_check_url http://localhost:8080 --probe_name head_liveness"
+                ]
+              },
+              "failureThreshold": 2,
+              "periodSeconds": 5,
+              "successThreshold": 1,
+              "timeoutSeconds": 15
+            },
+            "name": "kserve-container",
+            "readinessProbe": {
+              "exec": {
+                "command": [
+                  "bash",
+                  "-c",
+                  "python ./huggingfaceserver/health_check.py runtime_health --health_check_url http://localhost:8080 --probe_name head_readiness"
+                ]
+              },
+              "failureThreshold": 2,
+              "periodSeconds": 5,
+              "successThreshold": 1,
+              "timeoutSeconds": 15
+            },
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "12Gi"
+              },
+              "requests": {
+                "cpu": "2",
+                "memory": "6Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            },
+            "startupProbe": {
+              "exec": {
+                "command": [
+                  "bash",
+                  "-c",
+                  "python ./huggingfaceserver/health_check.py registered_node_and_runtime_health --health_check_url http://localhost:8080 --probe_name head_startup"
+                ]
+              },
+              "failureThreshold": 40,
+              "initialDelaySeconds": 60,
+              "periodSeconds": 30,
+              "successThreshold": 1,
+              "timeoutSeconds": 30
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/dev/shm",
+                "name": "shm"
+              }
+            ]
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v2",
+          "v1"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "huggingface",
+            "priority": 2,
+            "version": "1"
+          }
+        ],
+        "volumes": [
+          {
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "3Gi"
+            },
+            "name": "shm"
+          }
+        ],
+        "workerSpec": {
+          "containers": [
+            {
+              "command": [
+                "bash",
+                "-c",
+                "export RAY_HEAD_ADDRESS=${HEAD_SVC}.${POD_NAMESPACE}.svc.cluster.local:6379\nSECONDS=0\n\nwhile true; do              \n  if (( SECONDS <= 240 )); then\n    if ray health-check --address \"${RAY_HEAD_ADDRESS}\" > /dev/null 2>&1; then\n      echo \"Ray Global Control Service(GCS) is ready.\"\n      break\n    fi\n    echo \"$SECONDS seconds elapsed: Waiting for Ray Global Control Service(GCS) to be ready.\"\n  else\n    if ray health-check --address \"${RAY_HEAD_ADDRESS}\"; then\n      echo \"Ray Global Control Service(GCS) is ready. Any error messages above can be safely ignored.\"\n      break\n    fi\n    echo \"$SECONDS seconds elapsed: Still waiting for Ray Global Control Service(GCS) to be ready.\"\n  fi\n\n  sleep 5\ndone\n\necho \"Attempting to connect to Ray cluster at $RAY_HEAD_ADDRESS ...\"\nray start --address=\"${RAY_HEAD_ADDRESS}\" --block\n"
+              ],
+              "env": [
+                {
+                  "name": "POD_NAME",
+                  "valueFrom": {
+                    "fieldRef": {
+                      "fieldPath": "metadata.name"
+                    }
+                  }
+                },
+                {
+                  "name": "POD_NAMESPACE",
+                  "valueFrom": {
+                    "fieldRef": {
+                      "fieldPath": "metadata.namespace"
+                    }
+                  }
+                }
+              ],
+              "image": "kserve/huggingfaceserver:v0.21.0-gpu",
+              "imagePullPolicy": "IfNotPresent",
+              "livenessProbe": {
+                "exec": {
+                  "command": [
+                    "bash",
+                    "-c",
+                    "export RAY_ADDRESS=${HEAD_SVC}.${POD_NAMESPACE}.svc.cluster.local:6379\npython ./huggingfaceserver/health_check.py registered_nodes --probe_name worker_liveness"
+                  ]
+                },
+                "failureThreshold": 2,
+                "periodSeconds": 5,
+                "successThreshold": 1,
+                "timeoutSeconds": 15
+              },
+              "name": "worker-container",
+              "resources": {
+                "limits": {
+                  "cpu": "4",
+                  "memory": "12Gi"
+                },
+                "requests": {
+                  "cpu": "2",
+                  "memory": "6Gi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "privileged": false,
+                "runAsNonRoot": true
+              },
+              "startupProbe": {
+                "exec": {
+                  "command": [
+                    "bash",
+                    "-c",
+                    "export RAY_HEAD_NODE=${HEAD_SVC}.${POD_NAMESPACE}.svc.cluster.local\nexport RAY_ADDRESS=${RAY_HEAD_NODE}:6379\npython ./huggingfaceserver/health_check.py registered_node_and_runtime_models --runtime_url http://${RAY_HEAD_NODE}:8080/v1/models --probe_name worker_startup"
+                  ]
+                },
+                "failureThreshold": 40,
+                "initialDelaySeconds": 60,
+                "periodSeconds": 30,
+                "successThreshold": 1,
+                "timeoutSeconds": 30
+              },
+              "volumeMounts": [
+                {
+                  "mountPath": "/dev/shm",
+                  "name": "shm"
+                }
+              ]
+            }
+          ],
+          "pipelineParallelSize": 2,
+          "tensorParallelSize": 1,
+          "volumes": [
+            {
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "3Gi"
+              },
+              "name": "shm"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "lgbserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-lgbserver",
+        "resourceVersion": "8174562",
+        "uid": "ee5bb1c8-ad2a-4df7-9a03-332a763950b2"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080",
+              "--nthread=1"
+            ],
+            "image": "kserve/lgbserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "lightgbm",
+            "priority": 1,
+            "version": "4"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "mlserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-mlserver",
+        "resourceVersion": "8174569",
+        "uid": "e837b871-db92-43fa-93f2-5c158c4f5fec"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "MLSERVER_MODEL_IMPLEMENTATION",
+                "value": "{{.Labels.modelClass}}"
+              },
+              {
+                "name": "MLSERVER_HTTP_PORT",
+                "value": "8080"
+              },
+              {
+                "name": "MLSERVER_GRPC_PORT",
+                "value": "9000"
+              },
+              {
+                "name": "MODELS_DIR",
+                "value": "/mnt/models"
+              }
+            ],
+            "image": "docker.io/seldonio/mlserver:1.5.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "sklearn",
+            "priority": 2,
+            "version": "0"
+          },
+          {
+            "autoSelect": true,
+            "name": "sklearn",
+            "priority": 2,
+            "version": "1"
+          },
+          {
+            "autoSelect": true,
+            "name": "xgboost",
+            "priority": 2,
+            "version": "1"
+          },
+          {
+            "autoSelect": true,
+            "name": "xgboost",
+            "priority": 2,
+            "version": "2"
+          },
+          {
+            "autoSelect": true,
+            "name": "lightgbm",
+            "priority": 2,
+            "version": "3"
+          },
+          {
+            "autoSelect": true,
+            "name": "lightgbm",
+            "priority": 2,
+            "version": "4"
+          },
+          {
+            "autoSelect": true,
+            "name": "mlflow",
+            "priority": 1,
+            "version": "1"
+          },
+          {
+            "autoSelect": true,
+            "name": "mlflow",
+            "priority": 1,
+            "version": "2"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "paddleserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-paddleserver",
+        "resourceVersion": "8174559",
+        "uid": "61faa210-0d47-415b-a778-94316efb6c1d"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080"
+            ],
+            "image": "kserve/paddleserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "paddle",
+            "priority": 1,
+            "version": "2"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "pmmlserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-pmmlserver",
+        "resourceVersion": "8174566",
+        "uid": "6bdd1abb-e244-436e-91ed-22a860ccc281"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080"
+            ],
+            "image": "kserve/pmmlserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "pmml",
+            "priority": 1,
+            "version": "3"
+          },
+          {
+            "autoSelect": true,
+            "name": "pmml",
+            "priority": 1,
+            "version": "4"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "predictiveserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-predictiveserver",
+        "resourceVersion": "8174563",
+        "uid": "8db5532f-f89b-4b56-a57d-17ffe097c3c5"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080",
+              "--framework={{.Annotations.modelFormat}}",
+              "--nthread=1"
+            ],
+            "image": "kserve/predictiveserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "multiModel": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": false,
+            "name": "sklearn",
+            "priority": 3,
+            "version": "1"
+          },
+          {
+            "autoSelect": false,
+            "name": "xgboost",
+            "priority": 3,
+            "version": "2"
+          },
+          {
+            "autoSelect": false,
+            "name": "lightgbm",
+            "priority": 3,
+            "version": "4"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "sklearnserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-sklearnserver",
+        "resourceVersion": "8174561",
+        "uid": "53bb34bc-b7a0-458d-a076-44eaa268b149"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080"
+            ],
+            "image": "kserve/sklearnserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "sklearn",
+            "priority": 1,
+            "version": "1"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "tensorflow-serving"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-tensorflow-serving",
+        "resourceVersion": "8174565",
+        "uid": "3a6bfc00-93b7-49d2-a73a-c1a874717c96"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--port=9000",
+              "--rest_api_port=8080",
+              "--model_base_path=/mnt/models",
+              "--rest_api_timeout_in_ms=60000"
+            ],
+            "command": [
+              "/usr/bin/tensorflow_model_server"
+            ],
+            "image": "tensorflow/serving:2.6.2",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true,
+              "runAsUser": 1000
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "grpc-v1"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "tensorflow",
+            "priority": 2,
+            "version": "1"
+          },
+          {
+            "autoSelect": true,
+            "name": "tensorflow",
+            "priority": 2,
+            "version": "2"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "torchserve"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-torchserve",
+        "resourceVersion": "8174564",
+        "uid": "3244a32f-886f-4d95-879e-1177c449f11f"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8082"
+        },
+        "containers": [
+          {
+            "args": [
+              "torchserve",
+              "--start",
+              "--model-store=/mnt/models/model-store",
+              "--ts-config=/mnt/models/config/config.properties"
+            ],
+            "env": [
+              {
+                "name": "TS_SERVICE_ENVELOPE",
+                "value": "{{.Labels.serviceEnvelope}}"
+              }
+            ],
+            "image": "pytorch/torchserve-kfs:0.9.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true,
+              "runAsUser": 1000
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2",
+          "grpc-v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "pytorch",
+            "priority": 2,
+            "version": "1"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "tritonserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-tritonserver",
+        "resourceVersion": "8174567",
+        "uid": "f5694dec-682c-4403-ab0e-bea95fbe09e1"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8002"
+        },
+        "containers": [
+          {
+            "args": [
+              "tritonserver",
+              "--model-store=/mnt/models",
+              "--grpc-port=9000",
+              "--http-port=8080",
+              "--allow-grpc=true",
+              "--allow-http=true"
+            ],
+            "image": "nvcr.io/nvidia/tritonserver:23.05-py3",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true,
+              "runAsUser": 1000
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v2",
+          "grpc-v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "tensorrt",
+            "priority": 1,
+            "version": "8"
+          },
+          {
+            "autoSelect": true,
+            "name": "tensorflow",
+            "priority": 1,
+            "version": "1"
+          },
+          {
+            "autoSelect": true,
+            "name": "tensorflow",
+            "priority": 1,
+            "version": "2"
+          },
+          {
+            "autoSelect": true,
+            "name": "onnx",
+            "priority": 1,
+            "version": "1"
+          },
+          {
+            "name": "pytorch",
+            "version": "1"
+          },
+          {
+            "autoSelect": true,
+            "name": "triton",
+            "priority": 1,
+            "version": "2"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "vllmserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-vllmserver",
+        "resourceVersion": "8174568",
+        "uid": "e261eefc-dd27-402c-a69c-d64f5539f247"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--port=8080",
+              "--model=/mnt/models",
+              "--served-model-name={{.Name}}"
+            ],
+            "command": [
+              "python",
+              "-m",
+              "vllm.entrypoints.openai.api_server"
+            ],
+            "env": [
+              {
+                "name": "LMCACHE_USE_EXPERIMENTAL",
+                "value": "True"
+              },
+              {
+                "name": "HF_HOME",
+                "value": "/tmp"
+              },
+              {
+                "name": "VLLM_CONFIG_ROOT",
+                "value": "/tmp"
+              },
+              {
+                "name": "VLLM_WORKER_MULTIPROC_METHOD",
+                "value": "spawn"
+              }
+            ],
+            "image": "vllm/vllm-openai:latest",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "readinessProbe": {
+              "failureThreshold": 3,
+              "httpGet": {
+                "path": "/v1/models",
+                "port": 8080
+              },
+              "periodSeconds": 10,
+              "successThreshold": 1,
+              "timeoutSeconds": 5
+            },
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false
+            },
+            "startupProbe": {
+              "failureThreshold": 60,
+              "httpGet": {
+                "path": "/v1/models",
+                "port": 8080
+              },
+              "initialDelaySeconds": 30,
+              "periodSeconds": 30,
+              "successThreshold": 1,
+              "timeoutSeconds": 10
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/dev/shm",
+                "name": "devshm"
+              }
+            ]
+          }
+        ],
+        "disabled": false,
+        "hostIPC": false,
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "vLLM",
+            "priority": 1,
+            "version": "1"
+          }
+        ],
+        "volumes": [
+          {
+            "emptyDir": {
+              "medium": "Memory"
+            },
+            "name": "devshm"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "serving.kserve.io/v1alpha1",
+      "kind": "ClusterServingRuntime",
+      "metadata": {
+        "annotations": {
+          "meta.helm.sh/release-name": "kserve-runtime-configs",
+          "meta.helm.sh/release-namespace": "kserve",
+          "serving.kserve.io/server-type": "xgbserver"
+        },
+        "creationTimestamp": "2026-10-29T20:35:05Z",
+        "generation": 1,
+        "labels": {
+          "app.kubernetes.io/managed-by": "Helm"
+        },
+        "name": "kserve-xgbserver",
+        "resourceVersion": "8174556",
+        "uid": "0bfbe9ca-3a8c-416e-9ebf-e2d13bd5ac6a"
+      },
+      "spec": {
+        "annotations": {
+          "prometheus.kserve.io/path": "/metrics",
+          "prometheus.kserve.io/port": "8080"
+        },
+        "containers": [
+          {
+            "args": [
+              "--model_name={{.Name}}",
+              "--model_dir=/mnt/models",
+              "--http_port=8080",
+              "--nthread=1"
+            ],
+            "image": "kserve/xgbserver:v0.21.0",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "kserve-container",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "privileged": false,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "disabled": false,
+        "protocolVersions": [
+          "v1",
+          "v2"
+        ],
+        "supportedModelFormats": [
+          {
+            "autoSelect": true,
+            "name": "xgboost",
+            "priority": 1,
+            "version": "2"
+          }
+        ]
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {
+    "resourceVersion": ""
+  }
+}

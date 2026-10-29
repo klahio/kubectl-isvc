@@ -2,6 +2,8 @@ package status
 
 import (
 	"fmt"
+	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -115,7 +117,7 @@ func podFindings(s *Snapshot) []Finding {
 	sort.SliceStable(pods, func(i, j int) bool { return componentRank(pods[i]) < componentRank(pods[j]) })
 
 	for i := range pods {
-		f, ok := podFinding(&pods[i])
+		f, ok := podFinding(&pods[i], s.ISVC.CanaryOf(pods[i].Labels))
 		if !ok {
 			continue
 		}
@@ -139,8 +141,11 @@ func podFindings(s *Snapshot) []Finding {
 	return out
 }
 
-func podFinding(p *corev1.Pod) (Finding, bool) {
+func podFinding(p *corev1.Pod, canary string) (Finding, bool) {
 	component := p.Labels[isvc.LabelComponent]
+	if canary != "" {
+		component = "canary " + canary
+	}
 	object := "pod/" + p.Name
 	if component != "" {
 		object = component + " " + object
@@ -262,6 +267,21 @@ func exposureFindings(s *Snapshot) []Finding {
 	var out []Finding
 	for _, ing := range s.Ingresses {
 		object := "ingress/" + ing.Name
+		if IsLeftoverIngress(ing, s.ISVC.URL) {
+			// Seen on the lab cluster: after KServe switches to Gateway API it creates HTTPRoutes but keeps the old
+			// Ingress. It no longer serves the external address, so its problems say nothing about routability.
+			out = append(out, Finding{
+				Severity: SeverityWarning,
+				Title:    "Leftover Ingress",
+				Details: []string{
+					fmt.Sprintf("its hosts (%s) do not include the external address host %s", strings.Join(ingressHosts(ing), ", "), hostOf(s.ISVC.URL)),
+					"KServe keeps the old Ingress after a switch to Gateway API",
+				},
+				Object: object,
+				Hint:   fmt.Sprintf("delete it when nothing uses it any more: kubectl delete ingress %s -n %s", ing.Name, ing.Namespace),
+			})
+			continue
+		}
 		className := ""
 		if ing.Spec.IngressClassName != nil {
 			className = *ing.Spec.IngressClassName
@@ -309,6 +329,32 @@ func exposureFindings(s *Snapshot) []Finding {
 		}
 	}
 	return out
+}
+
+// IsLeftoverIngress reports an Ingress whose hosts do not include the InferenceService's external host, so it
+// cannot be what publishes the external address.
+func IsLeftoverIngress(ing networkingv1.Ingress, externalURL string) bool {
+	host := hostOf(externalURL)
+	hosts := ingressHosts(ing)
+	return host != "" && len(hosts) > 0 && !slices.Contains(hosts, host)
+}
+
+func ingressHosts(ing networkingv1.Ingress) []string {
+	var hosts []string
+	for _, r := range ing.Spec.Rules {
+		if r.Host != "" {
+			hosts = append(hosts, r.Host)
+		}
+	}
+	return hosts
+}
+
+func hostOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 func notRoutable(s *Snapshot, object, detail string) Finding {

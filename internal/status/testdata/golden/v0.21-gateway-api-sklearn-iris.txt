@@ -1,0 +1,29 @@
+sklearn-iris   namespace: kserve-test   mode: Standard   Ready   age: 57m
+
+Endpoints
+  external     https://sklearn-iris-kserve-test.k8s.internal
+  in-cluster   http://sklearn-iris-predictor.kserve-test.svc.cluster.local
+  ingress      sklearn-iris   via IngressClass istio   address: -   leftover
+  httproute    sklearn-iris   via Gateway gateway/lab-gateway   address: 192.168.4.30
+  httproute    sklearn-iris-predictor   via Gateway gateway/lab-gateway   address: 192.168.4.30
+
+Model
+  format    sklearn
+  storage   gs://kfserving-examples/models/sklearn/1.0/model
+  runtime   kserve-sklearnserver (ClusterServingRuntime)   protocols: v1, v2
+  state     Loaded (UpToDate)
+
+Components
+  predictor   Ready   replicas 1/1   autoscaling 1–1 (cpu 80%)
+
+Conditions
+  Ready            True
+  IngressReady     True
+  PredictorReady   True   NewReplicaSetAvailable: ReplicaSet "sklearn-iris-predictor-86559bff8" has successfully progressed.
+  Stopped          False
+
+Diagnosis
+  ⚠ Leftover Ingress   ingress/sklearn-iris
+      its hosts (sklearn-iris-kserve-test.example.com, sklearn-iris-predictor-kserve-test.example.com) do not include the external address host sklearn-iris-kserve-test.k8s.internal
+      KServe keeps the old Ingress after a switch to Gateway API
+      hint: delete it when nothing uses it any more: kubectl delete ingress sklearn-iris -n kserve-test

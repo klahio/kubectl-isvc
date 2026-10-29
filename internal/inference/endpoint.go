@@ -37,8 +37,9 @@ const probeTimeout = 2 * time.Second
 // Endpoint is where the request goes and how it got there.
 type Endpoint struct {
 	BaseURL string
-	// Host overrides the Host header, for requests sent to an Ingress or Gateway address.
-	Host string
+	// ConnectTo sends the TCP connection to this "address:port" instead of the URL's host, like curl --resolve.
+	// The URL keeps the real host name, so the Host header, the TLS server name and certificate checks stay right.
+	ConnectTo string
 	// Route describes the route for the output, for example "port-forward to svc/sklearn-iris-predictor".
 	Route string
 	close func()
@@ -68,7 +69,7 @@ type DiscoverOptions struct {
 }
 
 // Discover picks the route, in the order of docs/mvp.md section 5:
-// --url, the external address, an Ingress or Gateway address with the Host header, port-forward.
+// --url, the external address, the external host name connected to an Ingress or Gateway address, port-forward.
 func Discover(ctx context.Context, c kube.Clients, sum *status.Summary, snap *status.Snapshot, o DiscoverOptions) (*Endpoint, error) {
 	if o.URL != "" {
 		if _, err := url.ParseRequestURI(o.URL); err != nil {
@@ -89,15 +90,15 @@ func Discover(ctx context.Context, c kube.Clients, sum *status.Summary, snap *st
 			tried = append(tried, "external address "+ext.Host+" (not routable)")
 
 			for _, e := range sum.Endpoints.Exposure {
-				if e.Address == "" {
+				if e.Address == "" || e.Leftover {
 					continue
 				}
 				addr := net.JoinHostPort(e.Address, port(ext))
 				if reachable(ctx, addr) {
 					return &Endpoint{
-						BaseURL: ext.Scheme + "://" + addr,
-						Host:    ext.Host,
-						Route:   fmt.Sprintf("%s %s at %s with Host %s", e.Kind, e.Name, e.Address, ext.Host),
+						BaseURL:   trimSlash(sum.Endpoints.External),
+						ConnectTo: addr,
+						Route:     fmt.Sprintf("%s %s at %s", e.Kind, e.Name, addr),
 					}, nil
 				}
 				tried = append(tried, fmt.Sprintf("%s address %s", e.Kind, addr))
@@ -111,6 +112,19 @@ func Discover(ctx context.Context, c kube.Clients, sum *status.Summary, snap *st
 		return nil, fmt.Errorf("no route works without port-forward (tried: %v)", tried)
 	}
 	return portForward(ctx, c, snap, Target(snap.ISVC))
+}
+
+// client returns an HTTP client that honors ConnectTo.
+func (e *Endpoint) client() *http.Client {
+	if e.ConnectTo == "" {
+		return http.DefaultClient
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{}
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, e.ConnectTo)
+	}
+	return &http.Client{Transport: transport}
 }
 
 func reachable(ctx context.Context, addr string) bool {
@@ -134,10 +148,17 @@ func portForward(ctx context.Context, c kube.Clients, snap *status.Snapshot, com
 	if err != nil {
 		return nil, err
 	}
-	if len(svcs.Items) == 0 {
+	// Canary Services carry the same component label; the stable one is told apart by its app label.
+	var svc *corev1.Service
+	for i := range svcs.Items {
+		if m.CanaryOf(svcs.Items[i].Labels) == "" {
+			svc = &svcs.Items[i]
+			break
+		}
+	}
+	if svc == nil {
 		return nil, fmt.Errorf("no Service found for the %s of %s/%s", component, m.Namespace, m.Name)
 	}
-	svc := svcs.Items[0]
 	if len(svc.Spec.Ports) == 0 {
 		return nil, fmt.Errorf("service %s has no ports", svc.Name)
 	}

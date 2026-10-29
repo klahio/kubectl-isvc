@@ -14,9 +14,20 @@ var update = flag.Bool("update", false, "rewrite the golden files in testdata/go
 // Golden-file tests: the text output for each captured sample is kept in testdata/golden so that any change to
 // the layout shows up in review. Run `go test ./internal/status -update` after an intended change.
 func TestRenderGolden(t *testing.T) {
-	for _, name := range []string{"sklearn-iris", "bad-storage", "no-runtime"} {
+	cases := []struct{ set, name string }{
+		{fixtureVersion, "sklearn-iris"},
+		{fixtureVersion, "bad-storage"},
+		{fixtureVersion, "no-runtime"},
+		{fixtureGatewayAPI, "sklearn-iris"},
+		{fixtureGatewayAPI, "sklearn-canary"},
+	}
+	for _, tc := range cases {
+		name := tc.name
+		if tc.set != fixtureVersion {
+			name = tc.set + "-" + tc.name
+		}
 		t.Run(name, func(t *testing.T) {
-			f := loadFixture(t, name)
+			f := loadFixtureFrom(t, tc.set, tc.name)
 			s := f.snapshot(t)
 			findings := Diagnose(s)
 			for i := range findings {

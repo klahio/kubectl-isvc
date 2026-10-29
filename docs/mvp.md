@@ -150,6 +150,7 @@ The plugin follows the chain InferenceService → Deployment → ReplicaSet → 
 | External address not routable (Ingress) | An Ingress exists, but its `ingressClassName` does not match any IngressClass, or it has no load balancer address, **even though `IngressReady=True`** | A warning, and a hint to use `kubectl isvc test` (which falls back to port-forward) |
 | External address not routable (Gateway API) | An HTTPRoute's `status.parents[]` condition `Accepted` or `ResolvedRefs` is not True; or its parent Gateway is missing, not `Programmed`, or has no address | Which route and which Gateway, with the condition's reason and message |
 | Canary not ready | `CanaryPredictorReady=False` (v0.21 and newer) | The canary predictor's name, and the same diagnosis rules applied to its pods |
+| Leftover Ingress | An Ingress owned by the InferenceService whose hosts do not include the external address host. KServe keeps the old Ingress after a switch to Gateway API | A warning with a delete hint. The Ingress does not count against routability, and `test` never uses its address |
 
 Events are shown only when they help. Known noise is hidden. Example: `UpdateFailed` or `InternalError` events whose message contains "the object has been modified" are optimistic-locking retries by the controller, not failures.
 
@@ -207,7 +208,7 @@ Sends one smoke-test inference request and prints the response. You don't need t
 1. If a transformer exists, send to the transformer. Otherwise, send to the predictor.
 2. If `--url` is given, use that address.
 3. Otherwise, try the external address (`status.url`) with a short timeout (2 seconds).
-4. If its host name does not resolve (common with the default `example.com` domain), but the Ingress load balancer or the Gateway has an address, send to that address with the `Host` header set to the external host name. This tests the real ingress path without any DNS setup.
+4. If its host name does not resolve from this machine, but the Ingress load balancer or the Gateway has an address, keep the external URL and only send the TCP connection to that address, as `curl --resolve` does. The Host header, the TLS server name and the certificate check then all use the real host name. This tests the real ingress path without any DNS setup. A leftover Ingress (see 4.2) is never used.
 5. If that fails too, port-forward to the component's Service (port 80) on a free local port. Close the port-forward when the command ends.
 
 The command always says which route it used ("via port-forward to svc/sklearn-iris-predictor").
@@ -263,7 +264,7 @@ Exit code 0 for a 2xx response, 1 otherwise, in every format.
 - `kubectl isvc test sklearn-iris -f examples/iris-input.json` returns `{"predictions":[1,1]}` on the lab cluster through port-forward, with no extra flags.
 - A v2 input file (`inputs` key) against the same InferenceService uses `/v2/models/sklearn-iris/infer`.
 - A wrong path, or a protocol the runtime doesn't support, gives a clear error before any request is sent.
-- With KServe on Gateway API, it reaches the model through the `lab-gateway` address with the `Host` header, without port-forward.
+- With KServe on Gateway API, it reaches the model over HTTPS through the `lab-gateway` address, without port-forward. Verified 2026-10-29: `HTTP 200 · via HTTPRoute sklearn-iris`.
 - Each `-o` format prints as described, and `-o raw` output can be piped straight into `jq`.
 
 ## 6. `kubectl isvc logs <name>`
@@ -299,27 +300,36 @@ Shows logs from the right pods and containers. You don't need to know pod names,
 
 Unit tests use the fake dynamic client and the fake Kubernetes client from client-go, fed with real objects captured from the lab cluster.
 
-End-to-end checks run against the lab cluster, namespace `kserve-test`, with these samples. The ones marked "to add" don't exist yet.
+End-to-end checks run against the lab cluster, namespace `kserve-test`, with these samples.
 
 | Sample | Expected result |
 |---|---|
 | `examples/sklearn-iris.yaml` | Healthy; all three commands succeed |
-| Bad `storageUri` (to add) | `status` diagnoses a model download failure; `logs --init` shows the error |
-| Image that does not exist (to add) | `status` diagnoses an image pull failure |
-| Memory limit too small (to add) | `status` diagnoses out of memory |
-| Requests more GPU than is free (to add) | `status` diagnoses a scheduling failure |
-| Canary predictor with `trafficPercent` (to add) | `status` shows the split (needs Gateway API, see below) |
-| HTTPRoute pointing at a Gateway that does not exist (to add) | `status` diagnoses the Gateway API problem |
+| `examples/broken/bad-storage.yaml` | `status` diagnoses a model download failure; `logs --init` shows the error |
+| `examples/broken/bad-image.yaml` | `status` diagnoses an image pull failure |
+| `examples/broken/oom.yaml` | `status` diagnoses out of memory |
+| `examples/broken/unschedulable.yaml` | `status` diagnoses a scheduling failure |
+| `examples/broken/no-runtime.yaml` | `status` diagnoses that no serving runtime supports the model format |
+| `examples/sklearn-canary.yaml` | `status` shows stable 80%, canary `v2` 20% with its own replicas (needs Gateway API, see below) |
+| HTTPRoute pointing at a Gateway that does not exist | `status` diagnoses the Gateway API problem (unit test with an edited fixture) |
 | `examples/qwen-llm.yaml` (graphics processing unit, time-sliced) | Healthy; `status` and `logs` work. Its OpenAI-compatible endpoints are not covered by `test` in 0.1 |
 
 ### Exposure setups
 
-The lab cluster currently uses KServe's default, Kubernetes Ingress. To cover Gateway API and canary as well, switch KServe to Gateway API:
-- Use the existing Cilium Gateway `gateway/lab-gateway` (GatewayClass `cilium`).
-- Set `kserve.controller.gateway.ingressGateway.enableGatewayApi=true` and point it at that Gateway. Confirm the exact Helm values against the KServe chart at setup time.
-- Run the sample table again.
+Both setups must pass before a release. Fixtures for both are in `internal/status/testdata/v0.21` (Ingress) and `internal/status/testdata/v0.21-gateway-api`.
 
-Both setups must pass before a release.
+- **Kubernetes Ingress**: KServe's default.
+- **Gateway API**: the lab cluster has used it since 2026-10-29, with the existing Cilium Gateway `gateway/lab-gateway`. That Gateway accepts only `*.k8s.internal` host names, and other namespaces only on its HTTPS listener. The Helm values for `kserve-resources` are:
+  ```
+  kserve.controller.gateway.ingressGateway.enableGatewayApi=true
+  kserve.controller.gateway.ingressGateway.kserveGateway=gateway/lab-gateway
+  kserve.controller.gateway.ingressGateway.className=cilium
+  kserve.controller.gateway.domain=k8s.internal
+  kserve.controller.gateway.urlScheme=https
+  ```
+  Existing InferenceServices move to HTTPRoutes only on their next reconcile, and their old Ingress stays behind.
+
+**Canary objects.** The canary predictor's Deployment, Service and pods carry the same `component=predictor` label as the stable predictor. Only the `app` label tells them apart: `isvc.<name>-predictor` for the stable one, `isvc.<name>-<canary>-predictor` for a canary. `status` counts their replicas separately, and `test` port-forwards to the stable Service. Sample: `examples/sklearn-canary.yaml`, verified with an HTTPRoute split of 80/20.
 
 ### Version matrix
 

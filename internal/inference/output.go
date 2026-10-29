@@ -38,8 +38,8 @@ func Write(w io.Writer, format string, r *Result) error {
 	default:
 		var b strings.Builder
 		fmt.Fprintf(&b, "%s %s\n", r.Method, r.URL)
-		if r.Host != "" {
-			fmt.Fprintf(&b, "  Host: %s\n", r.Host)
+		if r.ConnectTo != "" {
+			fmt.Fprintf(&b, "  connected to %s\n", r.ConnectTo)
 		}
 		fmt.Fprintf(&b, "  protocol %s (%s) · via %s\n", r.Protocol, r.ProtocolBy, r.Route)
 		fmt.Fprintf(&b, "%s · %d ms\n\n", r.Status, r.DurationMs)

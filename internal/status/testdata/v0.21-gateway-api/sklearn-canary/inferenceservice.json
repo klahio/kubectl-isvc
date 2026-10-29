@@ -1,0 +1,114 @@
+{
+  "apiVersion": "serving.kserve.io/v1beta1",
+  "kind": "InferenceService",
+  "metadata": {
+    "annotations": {
+      "modelFormat": "sklearn",
+      "serving.kserve.io/deploymentMode": "Standard"
+    },
+    "creationTimestamp": "2026-10-29T22:43:02Z",
+    "finalizers": [
+      "inferenceservice.finalizers"
+    ],
+    "generation": 1,
+    "name": "sklearn-canary",
+    "namespace": "kserve-test",
+    "resourceVersion": "8256174",
+    "uid": "8b8b0ff6-2a14-4e1a-aa67-0b44de5ca978"
+  },
+  "spec": {
+    "canary": [
+      {
+        "predictor": {
+          "model": {
+            "modelFormat": {
+              "name": "sklearn"
+            },
+            "name": "",
+            "resources": {},
+            "storageUri": "gs://kfserving-examples/models/sklearn/1.0/model"
+          },
+          "name": "v2"
+        },
+        "trafficPercent": 20
+      }
+    ],
+    "predictor": {
+      "model": {
+        "modelFormat": {
+          "name": "sklearn"
+        },
+        "name": "",
+        "resources": {},
+        "storageUri": "gs://kfserving-examples/models/sklearn/1.0/model"
+      }
+    }
+  },
+  "status": {
+    "address": {
+      "url": "http://sklearn-canary-predictor.kserve-test.svc.cluster.local"
+    },
+    "canaryStatuses": [
+      {
+        "modelStatus": {
+          "transitionStatus": ""
+        },
+        "name": "v2",
+        "ready": true,
+        "trafficPercent": 20
+      }
+    ],
+    "clusterServingRuntimeName": "kserve-sklearnserver",
+    "components": {
+      "predictor": {
+        "url": "http://sklearn-canary-predictor-kserve-test.k8s.internal"
+      }
+    },
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-29T22:43:29Z",
+        "reason": "AllCanariesReady",
+        "severity": "Info",
+        "status": "True",
+        "type": "CanaryPredictorReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:43:29Z",
+        "status": "True",
+        "type": "IngressReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:43:29Z",
+        "message": "ReplicaSet \"sklearn-canary-predictor-766dbf95c9\" has successfully progressed.",
+        "reason": "NewReplicaSetAvailable",
+        "status": "True",
+        "type": "PredictorReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:43:29Z",
+        "status": "True",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-29T22:43:02Z",
+        "severity": "Info",
+        "status": "False",
+        "type": "Stopped"
+      }
+    ],
+    "deploymentMode": "Standard",
+    "modelStatus": {
+      "copies": {
+        "failedCopies": 0,
+        "totalCopies": 1
+      },
+      "states": {
+        "activeModelState": "Loaded",
+        "targetModelState": "Loaded"
+      },
+      "transitionStatus": "UpToDate"
+    },
+    "observedGeneration": 1,
+    "url": "https://sklearn-canary-kserve-test.k8s.internal"
+  }
+}

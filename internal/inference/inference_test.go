@@ -125,7 +125,7 @@ func TestSendAndOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := Send(context.Background(), Request{
-		Endpoint: &Endpoint{BaseURL: s.URL, Host: "sklearn-iris.kserve-test.example.com", Route: "Ingress sklearn-iris at 127.0.0.1 with Host x"},
+		Endpoint: &Endpoint{BaseURL: "http://sklearn-iris.kserve-test.example.invalid", ConnectTo: strings.TrimPrefix(s.URL, "http://"), Route: "Ingress sklearn-iris at 127.0.0.1:80"},
 		Protocol: Choice{V1, "input has \"instances\""},
 		Model:    "sklearn-iris",
 		Body:     []byte(v1Body),
@@ -135,7 +135,7 @@ func TestSendAndOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.OK() || last.Host != "sklearn-iris.kserve-test.example.com" || last.Header.Get("Authorization") != "Bearer test-token" {
+	if !res.OK() || last.Host != "sklearn-iris.kserve-test.example.invalid" || last.Header.Get("Authorization") != "Bearer test-token" {
 		t.Errorf("status=%d host=%q auth=%q", res.StatusCode, last.Host, last.Header.Get("Authorization"))
 	}
 	if ct := last.Header.Get("Content-Type"); ct != "application/json" {
@@ -162,7 +162,7 @@ func TestSendAndOutputs(t *testing.T) {
 		t.Errorf("json = %s, %v", out.String(), err)
 	}
 	out.Reset()
-	if err := Write(&out, OutputPretty, res); err != nil || !strings.Contains(out.String(), "  Host: sklearn-iris.kserve-test.example.com\n") {
+	if err := Write(&out, OutputPretty, res); err != nil || !strings.Contains(out.String(), "  connected to "+res.ConnectTo+"\n") {
 		t.Errorf("pretty = %q, %v", out.String(), err)
 	}
 }
@@ -178,8 +178,8 @@ func TestSummarizeV2AndErrors(t *testing.T) {
 	}
 }
 
-// With KServe's default domain the external name does not resolve; the Ingress or Gateway address with the Host
-// header still reaches the model without port-forward.
+// When the external name does not resolve from this machine, the Ingress or Gateway address still reaches the model
+// without port-forward: the URL keeps the host name and only the TCP connection goes to the address.
 func TestDiscoverHostHeaderRoute(t *testing.T) {
 	s, _ := server(t, V1.PathTemplate())
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(s.URL, "http://"))
@@ -194,8 +194,13 @@ func TestDiscoverHostHeaderRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ep.BaseURL != "http://127.0.0.1:"+port || ep.Host != "sklearn-iris-kserve-test.example.invalid:"+port {
+	if ep.BaseURL != "http://sklearn-iris-kserve-test.example.invalid:"+port || ep.ConnectTo != "127.0.0.1:"+port {
 		t.Errorf("endpoint = %+v", ep)
+	}
+	// The request reaches the server through ConnectTo even though the host name does not resolve.
+	res, err := Send(context.Background(), Request{Endpoint: ep, Protocol: Choice{V1, "test"}, Model: "sklearn-iris", Body: []byte(v1Body), Timeout: 5 * time.Second})
+	if err != nil || !res.OK() {
+		t.Fatalf("send through ConnectTo: %v %+v", err, res)
 	}
 	if !strings.HasPrefix(ep.Route, "HTTPRoute sklearn-iris at 127.0.0.1") {
 		t.Errorf("route = %q", ep.Route)

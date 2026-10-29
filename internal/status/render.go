@@ -84,7 +84,11 @@ func (r TextRenderer) Render(w io.Writer, s *Summary) error {
 	fmt.Fprintf(tw, "  external\t%s\n", external)
 	fmt.Fprintf(tw, "  in-cluster\t%s\n", dash(s.Endpoints.InCluster))
 	for _, e := range s.Endpoints.Exposure {
-		fmt.Fprintf(tw, "  %s\t%s   via %s   address: %s\n", strings.ToLower(e.Kind), e.Name, dash(e.Via), dash(e.Address))
+		line := fmt.Sprintf("  %s\t%s   via %s   address: %s", strings.ToLower(e.Kind), e.Name, dash(e.Via), dash(e.Address))
+		if e.Leftover {
+			line += "   " + r.paint(colorYellow, "leftover")
+		}
+		fmt.Fprintln(tw, line)
 	}
 	tw.Flush()
 
@@ -140,7 +144,7 @@ func (r TextRenderer) Render(w io.Writer, s *Summary) error {
 		tw = p.table()
 		fmt.Fprintf(tw, "  stable\t%d%%\n", s.Canary.StablePercent)
 		for _, c := range s.Canary.Canaries {
-			fmt.Fprintf(tw, "  %s\t%d%%\t%s\n", c.Name, c.TrafficPercent, r.state(s.Canary.Ready))
+			fmt.Fprintf(tw, "  %s\t%d%%\t%s\treplicas %d/%d\n", c.Name, c.TrafficPercent, r.state(c.Ready), c.ReadyReplicas, c.Replicas)
 		}
 		tw.Flush()
 	}

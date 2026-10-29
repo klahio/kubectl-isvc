@@ -1,0 +1,21 @@
+# Standard-mode canary (KServe v0.21+, needs KServe on Gateway API): 20% of the traffic goes to the canary
+# predictor "v2", 80% stays on the stable predictor. Both serve the same sample model here.
+# kubectl apply -n kserve-test -f examples/sklearn-canary.yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: sklearn-canary
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: sklearn
+      storageUri: gs://kfserving-examples/models/sklearn/1.0/model
+  canary:
+    - trafficPercent: 20
+      predictor:
+        name: v2
+        model:
+          modelFormat:
+            name: sklearn
+          storageUri: gs://kfserving-examples/models/sklearn/1.0/model

@@ -31,7 +31,7 @@ type Result struct {
 	ProtocolBy string        `json:"protocolChosenBy"`
 	Method     string        `json:"method"`
 	URL        string        `json:"url"`
-	Host       string        `json:"host,omitempty"`
+	ConnectTo  string        `json:"connectTo,omitempty"`
 	StatusCode int           `json:"statusCode"`
 	Status     string        `json:"status"`
 	Duration   time.Duration `json:"-"`
@@ -55,7 +55,7 @@ func CheckPath(ctx context.Context, ep *Endpoint, p Protocol) error {
 	if err != nil {
 		return nil
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := ep.client().Do(req)
 	if err != nil {
 		return nil
 	}
@@ -102,7 +102,7 @@ func Send(ctx context.Context, r Request) (*Result, error) {
 	}
 
 	start := time.Now()
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := r.Endpoint.client().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request to %s failed: %w", req.URL, err)
 	}
@@ -119,7 +119,7 @@ func Send(ctx context.Context, r Request) (*Result, error) {
 		ProtocolBy: r.Protocol.Because,
 		Method:     http.MethodPost,
 		URL:        req.URL.String(),
-		Host:       r.Endpoint.Host,
+		ConnectTo:  r.Endpoint.ConnectTo,
 		StatusCode: resp.StatusCode,
 		Status:     resp.Status,
 		Duration:   elapsed,
@@ -140,14 +140,7 @@ func newRequest(ctx context.Context, method string, ep *Endpoint, path string, b
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, ep.BaseURL+path, reader)
-	if err != nil {
-		return nil, err
-	}
-	if ep.Host != "" {
-		req.Host = ep.Host
-	}
-	return req, nil
+	return http.NewRequestWithContext(ctx, method, ep.BaseURL+path, reader)
 }
 
 // ParseHeaders turns repeated "Name: value" flags into a header set.
