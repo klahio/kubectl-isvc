@@ -8,9 +8,8 @@ spec:
   shortDescription: Diagnose, smoke-test and read logs of KServe model services
   description: |
     A KServe InferenceService or LLMInferenceService fans out into a serving
-    runtime, Deployments,
-    pods with a model-download init container, Services, an Ingress or Gateway
-    API routes, and an autoscaler. When a model is not serving, the cause is
+    runtime, Deployments, pods with a model-download init container, Services,
+    an Ingress or Gateway API routes, and an autoscaler. When a model is not serving, the cause is
     usually several objects away, and KServe's own Ready reason often points
     somewhere else (for example "Predictor ingress not created" when the pod
     is out of memory).
