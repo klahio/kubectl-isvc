@@ -248,7 +248,7 @@ The model name defaults to the InferenceService name, which is how KServe's buil
 | `--url` | automatic | Send to this base address instead of discovering one |
 | `--port-forward` | `auto` | `auto`, `always`, or `never` |
 | `-H, --header` | none | Extra request header, repeatable (for example an authorization token) |
-| `--timeout` | `30s` | Request timeout |
+| `--timeout` | `30s`; `2m` for OpenAI requests | Request timeout. The first request to a freshly started LLM server took 23 seconds on the lab cluster, the next ones milliseconds |
 | `-o, --output` | `pretty` | Output format, one of `pretty`, `summary`, `raw` or `json` (see Output) |
 
 ### Output
@@ -303,7 +303,7 @@ Shows logs from the right pods and containers. You don't need to know pod names,
 
 ## 6a. LLMInferenceService (`llmisvc/NAME`)
 
-Added to version 0.1 on 2026-10-29 (decision 6). The three commands keep their names and flags; `TYPE/NAME` (decision 5) picks the resource: `kubectl kserve status llmisvc/smollm`.
+Added to version 0.1 on 2026-10-29 (decision 6). Implemented the same day; verified on the lab cluster as described in 6a.5. The three commands keep their names and flags; `TYPE/NAME` (decision 5) picks the resource: `kubectl kserve status llmisvc/smollm`.
 
 ### 6a.1 What KServe creates
 
@@ -336,7 +336,7 @@ Diagnosis: all pod rules of section 4.2 apply to the workload pods (model downlo
 
 | Situation | How it is detected | What it prints |
 |---|---|---|
-| Server crashes, root cause earlier in the log | `main` restarts with a non-zero exit. vLLM's last line is usually only "Engine core initialization failed" | Searches the previous instance's last 300 log lines for known causes and error lines, and prints the first match instead of the last line (table below) |
+| Server crashes, root cause earlier in the log | `main` restarts with a non-zero exit. vLLM's last line is usually only "Engine core initialization failed" | Searches the previous instance's last 2,000 log lines for known causes and error lines, and prints the first match instead of the last line (table below) |
 | Server still loading, not crashed | Startup probe failing, no restarts yet | "Starting: model loading can take minutes", with the elapsed time, so it is not mistaken for a failure |
 | A preset cannot be applied | `PresetsCombined=False` | The condition message (for example a missing LLMInferenceServiceConfig in `spec.baseRefs`) |
 | Multi-node without LeaderWorkerSet | `spec.worker` set, and the `leaderworkersets` API is missing | "LeaderWorkerSet is not installed" |
@@ -361,6 +361,7 @@ LLMInferenceServices serve vLLM's OpenAI-compatible API, at the root (`/v1/...`)
 - **Model name**: `"model"` from the input if present, otherwise `spec.model.name`, otherwise the first id from `GET /v1/models`.
 - **Route**: `--url`; `status.url` when routable (with a router); the Gateway address with the external host name (as in section 5); otherwise port-forward to `<name>-kserve-workload-svc`, port from the Service. HTTPS when the Service port says so.
 - **Streaming**: version 0.1 sends `"stream": false` only.
+- **Timeout**: `2m` by default for OpenAI requests (section 5 flags); a timeout explains that a model server's first request can be much slower than later ones.
 - **Output**: `pretty` shows the answer text, the finish reason and the token usage; `summary` is one line, for example `HTTP 200 · 412 ms · via port-forward · "Kubernetes is ..." · 41+40 tokens`; `raw` and `json` as in section 5.
 - The same OpenAI mode works for InferenceServices whose server publishes `/openai/v1/chat/completions` (KServe's Hugging Face runtime). The `/openapi.json` check of section 5 tells the two path layouts apart.
 
@@ -401,8 +402,8 @@ End-to-end checks run against the lab cluster, namespace `kserve-test`, with the
 | HTTPRoute pointing at a Gateway that does not exist | `status` diagnoses the Gateway API problem (unit test with an edited fixture) |
 | `examples/qwen-llm.yaml` (InferenceService, Hugging Face runtime on a time-sliced graphics processing unit) | Healthy; `test` in OpenAI mode reaches `/openai/v1/chat/completions` |
 | `examples/llmisvc-smollm.yaml` (LLMInferenceService, no router) | Healthy; acceptance criteria of section 6a.5 |
-| `examples/broken/llmisvc-libcuda.yaml` (to add: the sample without `TRITON_LIBCUDA_PATH`) | `status` names `cannot find -l:libcuda.so.1` with the hint |
-| `examples/broken/llmisvc-bad-model.yaml` (to add: a model URI that does not exist) | `status` diagnoses the model download failure |
+| `examples/broken/llmisvc-libcuda.yaml` (the sample without `TRITON_LIBCUDA_PATH`) | `status` names `cannot find -l:libcuda.so.1` with the hint |
+| `examples/broken/llmisvc-bad-model.yaml` (a model URI that does not exist) | `status` diagnoses the model download failure |
 | LLMInferenceService with a router whose Gateway lacks Inference Extension support | `status` diagnoses the unresolved InferencePool backend (unit test with an edited fixture, until a router is installed) |
 
 ### Exposure setups
@@ -424,7 +425,7 @@ Both setups must pass before a release. Fixtures for both are in `internal/statu
 
 ### Version matrix
 
-**Current state (2026-10-29): only KServe v0.21.0 is tested.** The unit-test fixtures are `internal/status/testdata/v0.21` (Ingress) and `v0.21-gateway-api`; LLMInferenceService fixtures are still to be captured. Support for v0.16 – v0.20 rests on comparing the KServe source at each release tag (section 2.1), not on tests. The README says so too.
+**Current state (2026-10-29): only KServe v0.21.0 is tested.** The unit-test fixtures are `internal/status/testdata/v0.21` (Ingress) and `v0.21-gateway-api`; LLMInferenceService fixtures are in `v0.21-llmisvc` (captured with `hack/capture-llm-fixtures.sh`, including the crashed server's log). Support for v0.16 – v0.20 rests on comparing the KServe source at each release tag (section 2.1), not on tests. The README says so too.
 
 Target, not done yet:
 - **Fixtures** from each supported line: v0.16 (oldest), v0.18 (middle) and v0.21 (newest), captured with `hack/capture-fixtures.sh`.

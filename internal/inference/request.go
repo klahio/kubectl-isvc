@@ -48,7 +48,7 @@ func (r *Result) OK() bool { return r.StatusCode >= 200 && r.StatusCode < 300 }
 
 // CheckPath looks the request path up in the server's /openapi.json, if it publishes one, so a request that is
 // bound to fail is never sent. A server without the document (or an unreadable one) skips the check.
-func CheckPath(ctx context.Context, ep *Endpoint, p Protocol) error {
+func CheckPath(ctx context.Context, ep *Endpoint, c Choice) error {
 	ctx, cancel := context.WithTimeout(ctx, openAPITimeout)
 	defer cancel()
 	req, err := newRequest(ctx, http.MethodGet, ep, "/openapi.json", nil)
@@ -69,27 +69,37 @@ func CheckPath(ctx context.Context, ep *Endpoint, p Protocol) error {
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&doc); err != nil || len(doc.Paths) == 0 {
 		return nil
 	}
-	if _, ok := doc.Paths[p.PathTemplate()]; ok {
+	if _, ok := doc.Paths[c.PathTemplate()]; ok {
 		return nil
 	}
+	// Name what the server does publish, so the user knows which --protocol to use.
+	candidates := []struct {
+		choice Choice
+		flag   string
+	}{
+		{Choice{Protocol: V1}, "--protocol v1"},
+		{Choice{Protocol: V2}, "--protocol v2"},
+		{Choice{Protocol: OpenAI, Endpoint: c.Endpoint, Prefix: PrefixHuggingFace}, "--protocol openai (Hugging Face runtime)"},
+		{Choice{Protocol: OpenAI, Endpoint: c.Endpoint}, "an OpenAI request at /v1 (vLLM)"},
+	}
 	var known []string
-	for _, candidate := range []Protocol{V1, V2} {
-		if _, ok := doc.Paths[candidate.PathTemplate()]; ok {
-			known = append(known, string(candidate))
+	for _, k := range candidates {
+		if _, ok := doc.Paths[k.choice.PathTemplate()]; ok {
+			known = append(known, k.choice.PathTemplate()+", "+k.flag)
 		}
 	}
-	hint := "the server publishes neither the v1 nor the v2 inference path; it may use its own API (see its /openapi.json)"
+	hint := "it publishes none of the v1, v2 or OpenAI inference paths; it may use its own API (see its /openapi.json)"
 	if len(known) > 0 {
-		hint = "the server supports " + strings.Join(known, ", ") + "; use --protocol " + known[0]
+		hint = "it publishes " + strings.Join(known, "; ")
 	}
-	return fmt.Errorf("the server's /openapi.json has no %s path (%s): %s", p, p.PathTemplate(), hint)
+	return fmt.Errorf("the server's /openapi.json has no %s path %s: %s", c.Protocol, c.PathTemplate(), hint)
 }
 
 // Send performs the request.
 func Send(ctx context.Context, r Request) (*Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
-	path := r.Protocol.Protocol.Path(r.Model)
+	path := r.Protocol.Path(r.Model)
 	req, err := newRequest(ctx, http.MethodPost, r.Endpoint, path, r.Body)
 	if err != nil {
 		return nil, err
@@ -154,4 +164,29 @@ func ParseHeaders(values []string) (http.Header, error) {
 		h.Add(strings.TrimSpace(name), strings.TrimSpace(value))
 	}
 	return h, nil
+}
+
+// FirstModel asks an OpenAI-compatible server for its models and returns the first id; used when neither the input
+// nor the resource names the model.
+func FirstModel(ctx context.Context, ep *Endpoint, prefix string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, openAPITimeout)
+	defer cancel()
+	req, err := newRequest(ctx, http.MethodGet, ep, prefix+"/v1/models", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := ep.client().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("listing models: %w", err)
+	}
+	defer resp.Body.Close()
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&list); err != nil || len(list.Data) == 0 {
+		return "", fmt.Errorf("listing models at %s/v1/models: no model id in the answer", prefix)
+	}
+	return list.Data[0].ID, nil
 }

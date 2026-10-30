@@ -2,6 +2,7 @@ package inference
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -43,7 +45,9 @@ type Endpoint struct {
 	ConnectTo string
 	// Route describes the route for the output, for example "port-forward to svc/sklearn-iris-predictor".
 	Route string
-	close func()
+	// InsecureTLS skips certificate checks; only for HTTPS through a port-forward to a self-signed server.
+	InsecureTLS bool
+	close       func()
 }
 
 // Close releases the route (stops a port-forward).
@@ -53,14 +57,64 @@ func (e *Endpoint) Close() {
 	}
 }
 
-// Target says which component receives the request: the transformer when there is one, otherwise the predictor.
-func Target(m *isvc.InferenceService) string {
+// TargetComponent says which component receives the request: the transformer when there is one, otherwise the predictor.
+func TargetComponent(m *isvc.InferenceService) string {
 	for _, c := range m.Components {
 		if c.Name == "transformer" {
 			return "transformer"
 		}
 	}
 	return "predictor"
+}
+
+// Target is what route discovery needs to know about one resource, whatever its kind.
+type Target struct {
+	External string
+	Routable bool
+	Exposure []status.Exposure
+	// PortForward opens the last-resort route.
+	PortForward func(ctx context.Context) (*Endpoint, error)
+}
+
+// InferenceServiceTarget routes to the transformer when there is one, otherwise the stable predictor.
+func InferenceServiceTarget(c kube.Clients, sum *status.Summary, snap *status.Snapshot) Target {
+	return Target{
+		External: sum.Endpoints.External,
+		Routable: sum.Endpoints.Routable,
+		Exposure: sum.Endpoints.Exposure,
+		PortForward: func(ctx context.Context) (*Endpoint, error) {
+			return portForwardISVC(ctx, c, snap, TargetComponent(snap.ISVC))
+		},
+	}
+}
+
+// LLMInferenceServiceTarget routes to the workload Service of an LLMInferenceService.
+func LLMInferenceServiceTarget(c kube.Clients, sum *status.LLMSummary, snap *status.LLMSnapshot) Target {
+	return Target{
+		External: sum.Endpoints.External,
+		Routable: sum.Endpoints.Routable,
+		Exposure: sum.Endpoints.Exposure,
+		PortForward: func(ctx context.Context) (*Endpoint, error) {
+			svc := llmWorkloadService(snap.Services)
+			if svc == nil {
+				return nil, fmt.Errorf("no workload Service found for LLMInferenceService %s/%s", snap.Service.Namespace, snap.Service.Name)
+			}
+			return portForwardService(ctx, c, svc, "llmisvc/"+snap.Service.Name)
+		},
+	}
+}
+
+// llmWorkloadService picks the Service in front of the primary workload ("<name>-kserve-workload-svc").
+func llmWorkloadService(svcs []corev1.Service) *corev1.Service {
+	for i := range svcs {
+		if svcs[i].Labels["app.kubernetes.io/component"] == "llminferenceservice-workload" {
+			return &svcs[i]
+		}
+	}
+	if len(svcs) > 0 {
+		return &svcs[0]
+	}
+	return nil
 }
 
 // DiscoverOptions control the route selection.
@@ -71,7 +125,7 @@ type DiscoverOptions struct {
 
 // Discover picks the route, in the order of docs/mvp.md section 5:
 // --url, the external address, the external host name connected to an Ingress or Gateway address, port-forward.
-func Discover(ctx context.Context, c kube.Clients, sum *status.Summary, snap *status.Snapshot, o DiscoverOptions) (*Endpoint, error) {
+func Discover(ctx context.Context, t Target, o DiscoverOptions) (*Endpoint, error) {
 	if o.URL != "" {
 		if _, err := url.ParseRequestURI(o.URL); err != nil {
 			return nil, fmt.Errorf("--url: %w", err)
@@ -80,24 +134,24 @@ func Discover(ctx context.Context, c kube.Clients, sum *status.Summary, snap *st
 	}
 
 	var tried []string
-	if o.PortForward != PortForwardAlways && sum.Endpoints.External != "" {
-		ext, err := url.Parse(sum.Endpoints.External)
+	if o.PortForward != PortForwardAlways && t.External != "" {
+		ext, err := url.Parse(t.External)
 		if err == nil {
 			// The diagnosis already knows when the external address cannot work. Probing it anyway would be
 			// dangerous: with KServe's default domain the name may resolve to a real, unrelated web site.
-			if sum.Endpoints.Routable && reachable(ctx, hostPort(ext)) {
-				return &Endpoint{BaseURL: trimSlash(sum.Endpoints.External), Route: "external address"}, nil
+			if t.Routable && reachable(ctx, hostPort(ext)) {
+				return &Endpoint{BaseURL: trimSlash(t.External), Route: "external address"}, nil
 			}
 			tried = append(tried, "external address "+ext.Host+" (not routable)")
 
-			for _, e := range sum.Endpoints.Exposure {
+			for _, e := range t.Exposure {
 				if e.Address == "" || e.Leftover {
 					continue
 				}
 				addr := net.JoinHostPort(e.Address, port(ext))
 				if reachable(ctx, addr) {
 					return &Endpoint{
-						BaseURL:   trimSlash(sum.Endpoints.External),
+						BaseURL:   trimSlash(t.External),
 						ConnectTo: addr,
 						Route:     fmt.Sprintf("%s %s at %s", e.Kind, e.Name, addr),
 					}, nil
@@ -112,18 +166,23 @@ func Discover(ctx context.Context, c kube.Clients, sum *status.Summary, snap *st
 		}
 		return nil, fmt.Errorf("no route works without port-forward (tried: %v)", tried)
 	}
-	return portForward(ctx, c, snap, Target(snap.ISVC))
+	return t.PortForward(ctx)
 }
 
 // client returns an HTTP client that honors ConnectTo.
 func (e *Endpoint) client() *http.Client {
-	if e.ConnectTo == "" {
+	if e.ConnectTo == "" && !e.InsecureTLS {
 		return http.DefaultClient
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	dialer := &net.Dialer{}
-	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return dialer.DialContext(ctx, network, e.ConnectTo)
+	if e.ConnectTo != "" {
+		dialer := &net.Dialer{}
+		transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, e.ConnectTo)
+		}
+	}
+	if e.InsecureTLS {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // self-signed server behind a port-forward
 	}
 	return &http.Client{Transport: transport}
 }
@@ -139,8 +198,8 @@ func reachable(ctx context.Context, addr string) bool {
 	return true
 }
 
-// portForward forwards a free local port to a ready pod behind the component's Service, as `kubectl port-forward svc/...`.
-func portForward(ctx context.Context, c kube.Clients, snap *status.Snapshot, component string) (*Endpoint, error) {
+// portForwardISVC finds the stable Service of an InferenceService component and forwards to it.
+func portForwardISVC(ctx context.Context, c kube.Clients, snap *status.Snapshot, component string) (*Endpoint, error) {
 	m := snap.ISVC
 	svcs, err := c.Kube.CoreV1().Services(m.Namespace).List(ctx, metav1.ListOptions{LabelSelector: labels.Set{
 		isvc.LabelInferenceService: m.Name,
@@ -160,17 +219,23 @@ func portForward(ctx context.Context, c kube.Clients, snap *status.Snapshot, com
 	if svc == nil {
 		return nil, fmt.Errorf("no Service found for the %s of %s/%s", component, m.Namespace, m.Name)
 	}
+	return portForwardService(ctx, c, svc, m.Name)
+}
+
+// portForwardService forwards a free local port to a ready pod behind a Service, as `kubectl port-forward svc/...`.
+// statusArg is what to pass to `status` when no pod is ready.
+func portForwardService(ctx context.Context, c kube.Clients, svc *corev1.Service, statusArg string) (*Endpoint, error) {
 	if len(svc.Spec.Ports) == 0 {
 		return nil, fmt.Errorf("service %s has no ports", svc.Name)
 	}
 
-	pods, err := c.Kube.CoreV1().Pods(m.Namespace).List(ctx, metav1.ListOptions{LabelSelector: labels.Set(svc.Spec.Selector).String()})
+	pods, err := c.Kube.CoreV1().Pods(svc.Namespace).List(ctx, metav1.ListOptions{LabelSelector: labels.Set(svc.Spec.Selector).String()})
 	if err != nil {
 		return nil, err
 	}
 	pod := readyPod(pods.Items)
 	if pod == nil {
-		return nil, fmt.Errorf("no ready pod behind svc/%s; run `%s status %s` to see why", svc.Name, version.Command, m.Name)
+		return nil, fmt.Errorf("no ready pod behind svc/%s; run `%s status %s` to see why", svc.Name, version.Command, statusArg)
 	}
 	remote, err := containerPort(pod, svc.Spec.Ports[0].TargetPort)
 	if err != nil {
@@ -212,11 +277,22 @@ func portForward(ctx context.Context, c kube.Clients, snap *status.Snapshot, com
 		close(stop)
 		return nil, fmt.Errorf("port-forward to pod %s: no local port", pod.Name)
 	}
-	return &Endpoint{
+	ep := &Endpoint{
 		BaseURL: fmt.Sprintf("http://127.0.0.1:%d", ports[0].Local),
 		Route:   "port-forward to svc/" + svc.Name,
 		close:   func() { close(stop) },
-	}, nil
+	}
+	if isHTTPS(svc.Spec.Ports[0]) {
+		// The server's certificate names the Service, not 127.0.0.1, and is usually self-signed.
+		ep.BaseURL = fmt.Sprintf("https://127.0.0.1:%d", ports[0].Local)
+		ep.InsecureTLS = true
+		ep.Route += " (HTTPS, certificate not verified)"
+	}
+	return ep, nil
+}
+
+func isHTTPS(p corev1.ServicePort) bool {
+	return strings.Contains(strings.ToLower(p.Name), "https") || (p.AppProtocol != nil && strings.EqualFold(*p.AppProtocol, "https"))
 }
 
 func readyPod(pods []corev1.Pod) *corev1.Pod {

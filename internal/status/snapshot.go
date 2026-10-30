@@ -221,9 +221,10 @@ func isNotInstalled(err error) bool {
 	return apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || strings.Contains(err.Error(), "the server could not find the requested resource")
 }
 
+// ownedBy matches by UID, which is unique, so it works for every owner kind.
 func ownedBy(refs []metav1.OwnerReference, uid string) bool {
 	for _, r := range refs {
-		if string(r.UID) == uid && r.Kind == "InferenceService" {
+		if string(r.UID) == uid {
 			return true
 		}
 	}

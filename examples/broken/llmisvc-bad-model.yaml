@@ -1,0 +1,11 @@
+# Deliberately broken sample (docs/mvp.md section 7): the model does not exist on Hugging Face, so the
+# storage-initializer fails. No GPU is requested, because the server never starts.
+apiVersion: serving.kserve.io/v1alpha2
+kind: LLMInferenceService
+metadata:
+  name: llm-bad-model
+spec:
+  model:
+    uri: hf://HuggingFaceTB/this-model-does-not-exist
+    name: this-model-does-not-exist
+  replicas: 1

@@ -28,6 +28,7 @@ const (
 
 type statusOptions struct {
 	*rootOptions
+	kind     Kind
 	output   string
 	events   bool
 	watch    bool
@@ -37,24 +38,26 @@ type statusOptions struct {
 func newStatusCommand(root *rootOptions) *cobra.Command {
 	o := &statusOptions{rootOptions: root}
 	c := &cobra.Command{
-		Use:   "status [isvc/]NAME",
-		Short: "Show a one-screen summary of an InferenceService and diagnose why it is not working",
+		Use:   "status [isvc/|llmisvc/]NAME",
+		Short: "Show a one-screen summary of an InferenceService or LLMInferenceService and diagnose why it is not working",
 		Example: fmt.Sprintf(`  %[1]s%[2]s status sklearn-iris -n kserve-test
+  %[1]s%[2]s status llmisvc/smollm -n kserve-test
   %[1]s%[2]s status sklearn-iris -o json
   %[1]s%[2]s status sklearn-iris --exit-code   # exit 1 when not Ready`, commandPrefix(), PluginName),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, err := inferenceServiceName(args[0])
+			kind, name, err := resourceArg(args[0])
 			if err != nil {
 				return err
 			}
+			o.kind = kind
 			return o.run(cmd.Context(), name)
 		},
 	}
 	c.Flags().StringVarP(&o.output, "output", "o", "", "Output format: json or yaml (a structured summary). Default is human-readable")
-	c.Flags().BoolVar(&o.events, "events", false, "Also list recent events of the InferenceService and its pods")
+	c.Flags().BoolVar(&o.events, "events", false, "Also list recent events of the resource and its pods")
 	c.Flags().BoolVarP(&o.watch, "watch", "w", false, "Redraw every 2 seconds until interrupted")
-	c.Flags().BoolVar(&o.exitCode, "exit-code", false, "Exit with code 1 when the InferenceService is not Ready")
+	c.Flags().BoolVar(&o.exitCode, "exit-code", false, "Exit with code 1 when the resource is not Ready")
 	return c
 }
 
@@ -117,8 +120,11 @@ func (o *statusOptions) result(ready bool) error {
 	return nil
 }
 
-// once collects, diagnoses and prints one summary. It reports whether the InferenceService is Ready.
+// once collects, diagnoses and prints one summary. It reports whether the resource is Ready.
 func (o *statusOptions) once(ctx context.Context, clients kube.Clients, namespace, name string, w io.Writer) (bool, error) {
+	if o.kind == KindLLMInferenceService {
+		return o.onceLLM(ctx, clients, namespace, name, w)
+	}
 	snap, err := status.Collect(ctx, clients, namespace, name, o.events)
 	if err != nil {
 		return false, clusterError(err)
@@ -129,11 +135,7 @@ func (o *statusOptions) once(ctx context.Context, clients kube.Clients, namespac
 	}
 
 	findings := status.Diagnose(snap)
-	for i := range findings {
-		if ref := findings[i].Logs; ref != nil {
-			findings[i].LogLines = tailLogs(ctx, clients, namespace, ref)
-		}
-	}
+	addLogEvidence(ctx, clients, namespace, findings)
 	summary := status.Summarize(snap, findings)
 	events := eventLines(snap.Events)
 	ready := summary.Ready == "True"
@@ -164,8 +166,44 @@ func (o *statusOptions) once(ctx context.Context, clients kube.Clients, namespac
 	return ready, nil
 }
 
-func tailLogs(ctx context.Context, clients kube.Clients, namespace string, ref *status.LogRef) []string {
-	lines := int64(statusLogLines)
+// addLogEvidence fetches the log lines a finding points at. For a crash it searches a longer tail for a known root
+// cause and shows that instead of the last lines (docs/mvp.md section 6a.2).
+func addLogEvidence(ctx context.Context, clients kube.Clients, namespace string, findings []status.Finding) {
+	for i := range findings {
+		f := &findings[i]
+		if f.Logs == nil {
+			continue
+		}
+		if !f.Logs.Scan {
+			f.LogLines = tailLogs(ctx, clients, namespace, f.Logs, statusLogLines)
+			continue
+		}
+		lines := tailLogs(ctx, clients, namespace, f.Logs, status.ScanLines)
+		cause, evidence := status.ExplainLog(lines)
+		switch {
+		case cause != nil:
+			// The termination message's last line (for example "Engine core initialization failed") is replaced by
+			// the cause; the first detail, exit code and restarts, stays.
+			f.Details = append(f.Details[:min(1, len(f.Details))], "cause: "+cause.Meaning)
+			f.Hint = cause.Hint
+			f.LogLines = evidence
+		case len(evidence) > 0:
+			f.LogLines = evidence
+		default:
+			f.LogLines = lastN(lines, statusLogLines)
+		}
+	}
+}
+
+func lastN(lines []string, n int) []string {
+	if len(lines) <= n {
+		return lines
+	}
+	return lines[len(lines)-n:]
+}
+
+func tailLogs(ctx context.Context, clients kube.Clients, namespace string, ref *status.LogRef, n int) []string {
+	lines := int64(n)
 	req := clients.Kube.CoreV1().Pods(namespace).GetLogs(ref.Pod, &corev1.PodLogOptions{
 		Container: ref.Container,
 		Previous:  ref.Previous,
@@ -245,4 +283,40 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+func (o *statusOptions) onceLLM(ctx context.Context, clients kube.Clients, namespace, name string, w io.Writer) (bool, error) {
+	snap, err := status.CollectLLM(ctx, clients, namespace, name, o.events)
+	if err != nil {
+		return false, clusterError(err)
+	}
+	findings := status.DiagnoseLLM(snap)
+	addLogEvidence(ctx, clients, namespace, findings)
+	summary := status.SummarizeLLM(snap, findings)
+	events := eventLines(snap.Events)
+	ready := summary.Ready == "True"
+
+	switch o.output {
+	case "json", "yaml":
+		doc := struct {
+			*status.LLMSummary
+			Events []status.EventLine `json:"events,omitempty"`
+		}{summary, events}
+		data, err := marshal(o.output, doc)
+		if err != nil {
+			return ready, err
+		}
+		_, err = w.Write(data)
+		return ready, err
+	}
+	r := status.TextRenderer{Color: o.useColor(o.streams.Out)}
+	if err := r.RenderLLM(w, summary); err != nil {
+		return ready, err
+	}
+	if o.events {
+		if err := r.RenderEvents(w, events); err != nil {
+			return ready, err
+		}
+	}
+	return ready, nil
 }

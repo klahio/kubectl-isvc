@@ -264,6 +264,9 @@ func modelStatus(obj map[string]any) ModelStatus {
 	return ms
 }
 
+// Conditions parses status.conditions of any KServe object, Ready first.
+func Conditions(obj map[string]any) []Condition { return conditions(obj) }
+
 func conditions(obj map[string]any) []Condition {
 	raw, _, _ := unstructured.NestedSlice(obj, "status", "conditions")
 	out := make([]Condition, 0, len(raw))
@@ -293,6 +296,12 @@ func conditions(obj map[string]any) []Condition {
 	})
 	return out
 }
+
+// Integer reads a nested number from objects decoded either way (see integer).
+func Integer(obj map[string]any, fields ...string) int64 { return integer(obj, fields...) }
+
+// Str reads a nested string field and returns "" when it is missing or not a string.
+func Str(obj map[string]any, fields ...string) string { return str(obj, fields...) }
 
 // integer reads a nested number. Objects from the API server hold int64, but plain encoding/json decoding (for example
 // of saved objects) produces float64, which unstructured.NestedInt64 rejects.

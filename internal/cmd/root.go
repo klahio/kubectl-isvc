@@ -80,10 +80,11 @@ func newRootCommand(streams genericiooptions.IOStreams) *cobra.Command {
 	root := &cobra.Command{
 		Use: PluginName,
 		// cobra takes the command name from the first word of Use; the display name makes help read "kubectl kserve".
-		Annotations:   map[string]string{cobra.CommandDisplayNameAnnotation: commandPrefix() + PluginName},
-		Short:         "Operate a single KServe InferenceService",
-		Version:       version.String(),
-		Long:          "Day-to-day operational commands for a single KServe InferenceService: status, test and logs.",
+		Annotations: map[string]string{cobra.CommandDisplayNameAnnotation: commandPrefix() + PluginName},
+		Short:       "Operate a single KServe InferenceService or LLMInferenceService",
+		Version:     version.String(),
+		Long: "Day-to-day operational commands for a single KServe InferenceService or LLMInferenceService: status, test and logs.\n" +
+			"Name the resource as NAME or isvc/NAME (InferenceService), or llmisvc/NAME (LLMInferenceService).",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

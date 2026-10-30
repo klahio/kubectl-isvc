@@ -1,0 +1,21 @@
+smollm   llminferenceservice   namespace: kserve-test   Ready   age: 33m   api: serving.kserve.io/v1alpha2
+
+Endpoints
+  external     - (no router)
+  in-cluster   http://smollm-kserve-workload-svc.kserve-test.svc.cluster.local
+
+Model
+  name      HuggingFaceTB/SmolLM2-135M-Instruct
+  uri       hf://HuggingFaceTB/SmolLM2-135M-Instruct
+  image     ghcr.io/llm-d/llm-d-cuda:v0.9.0
+  presets   kserve-config-llm-template
+
+Workloads
+  primary   deployment/smollm-kserve   replicas 1/1
+
+Conditions
+  Ready               True
+  MainWorkloadReady   True
+  PresetsCombined     True
+  RouterReady         True
+  WorkloadsReady      True

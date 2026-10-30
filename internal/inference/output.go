@@ -43,7 +43,12 @@ func Write(w io.Writer, format string, r *Result) error {
 		}
 		fmt.Fprintf(&b, "  protocol %s (%s) · via %s\n", r.Protocol, r.ProtocolBy, r.Route)
 		fmt.Fprintf(&b, "%s · %d ms\n\n", r.Status, r.DurationMs)
-		b.WriteString(prettyBody(r))
+		if a, ok := openAIAnswer(r); ok && r.OK() {
+			b.WriteString(a.Text + "\n\n")
+			fmt.Fprintf(&b, "model %s · finish %s · tokens %d prompt + %d completion\n", dash(a.Model), dash(a.Finish), a.PromptTokens, a.CompletionTokens)
+		} else {
+			b.WriteString(prettyBody(r))
+		}
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
@@ -64,6 +69,9 @@ func prettyBody(r *Result) string {
 
 // summarize picks the interesting part of a body: v1 predictions, v2 outputs, an error message, or the body itself.
 func summarize(r *Result) string {
+	if a, ok := openAIAnswer(r); ok {
+		return fmt.Sprintf("%q · %d+%d tokens", shorten(strings.Join(strings.Fields(a.Text), " ")), a.PromptTokens, a.CompletionTokens)
+	}
 	obj, ok := r.JSONBody.(map[string]any)
 	if !ok {
 		return shorten(strings.TrimSpace(string(r.Body)))
@@ -111,4 +119,56 @@ func shortRoute(route string) string {
 		return route[:i]
 	}
 	return route
+}
+
+// answer is the useful part of an OpenAI chat or completion response.
+type answer struct {
+	Text             string
+	Model            string
+	Finish           string
+	PromptTokens     int
+	CompletionTokens int
+}
+
+// openAIAnswer reads choices[0] (message.content for chat, text for completions) and the token usage.
+func openAIAnswer(r *Result) (answer, bool) {
+	if r.Protocol != OpenAI {
+		return answer{}, false
+	}
+	var resp struct {
+		Model   string `json:"model"`
+		Choices []struct {
+			Text    string `json:"text"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(r.Body, &resp); err != nil || len(resp.Choices) == 0 {
+		return answer{}, false
+	}
+	c := resp.Choices[0]
+	text := c.Message.Content
+	if text == "" {
+		text = c.Text
+	}
+	return answer{
+		Text:             strings.TrimSpace(text),
+		Model:            resp.Model,
+		Finish:           c.FinishReason,
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+	}, true
+}
+
+func dash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }

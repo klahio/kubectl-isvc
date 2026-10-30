@@ -17,6 +17,7 @@ import (
 
 type logsOptions struct {
 	*rootOptions
+	kind Kind
 	logs.Options
 	prefix string
 }
@@ -24,23 +25,25 @@ type logsOptions struct {
 func newLogsCommand(root *rootOptions) *cobra.Command {
 	o := &logsOptions{rootOptions: root}
 	c := &cobra.Command{
-		Use:   "logs [isvc/]NAME",
+		Use:   "logs [isvc/|llmisvc/]NAME",
 		Short: "Show logs of an InferenceService's containers without looking up pod or container names",
 		Example: fmt.Sprintf(`  %[1]s%[2]s logs sklearn-iris                  # model server of every predictor pod
   %[1]s%[2]s logs sklearn-iris --init           # model download (storage-initializer)
   %[1]s%[2]s logs sklearn-iris -c all -f        # follow every component
-  %[1]s%[2]s logs sklearn-iris -p               # the previous, crashed instance`, commandPrefix(), PluginName),
+  %[1]s%[2]s logs sklearn-iris -p               # the previous, crashed instance
+  %[1]s%[2]s logs llmisvc/smollm               # vLLM server (container main) of an LLMInferenceService`, commandPrefix(), PluginName),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, err := inferenceServiceName(args[0])
+			kind, name, err := resourceArg(args[0])
 			if err != nil {
 				return err
 			}
+			o.kind = kind
 			return o.run(cmd.Context(), name)
 		},
 	}
 	f := c.Flags()
-	f.StringVarP(&o.Component, "component", "c", "predictor", "Component: "+strings.Join(logs.Components, ", "))
+	f.StringVarP(&o.Component, "component", "c", "", "Component. InferenceService: predictor (default), transformer, explainer, all. LLMInferenceService: main (default), prefill, scheduler, worker, all")
 	f.BoolVar(&o.Init, "init", false, "Show the storage-initializer (model download) logs instead of the server's")
 	f.BoolVar(&o.AllContainers, "all-containers", false, "Show every container in the selected pods, init containers and sidecars included")
 	f.BoolVarP(&o.Follow, "follow", "f", false, "Keep streaming; new pods and restarted containers are picked up")
@@ -52,8 +55,15 @@ func newLogsCommand(root *rootOptions) *cobra.Command {
 }
 
 func (o *logsOptions) run(ctx context.Context, name string) error {
-	if !slices.Contains(logs.Components, o.Component) {
-		return &ExitError{Code: ExitUsage, Err: fmt.Errorf("unknown component %q (use %s)", o.Component, strings.Join(logs.Components, ", "))}
+	o.Layout = logs.InferenceServiceLayout
+	if o.kind == KindLLMInferenceService {
+		o.Layout = logs.LLMInferenceServiceLayout
+	}
+	if o.Component == "" {
+		o.Component = o.Layout.Components[0]
+	}
+	if !slices.Contains(o.Layout.Accepted(), o.Component) {
+		return usage("unknown component %q for an %s (use %s)", o.Component, o.Layout.Kind, strings.Join(o.Layout.Accepted(), ", "))
 	}
 	if o.Init && o.AllContainers {
 		return &ExitError{Code: ExitUsage, Err: errors.New("--init and --all-containers cannot be used together")}
@@ -79,7 +89,12 @@ func (o *logsOptions) run(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := clients.GetInferenceService(ctx, namespace, name); err != nil {
+	if o.kind == KindLLMInferenceService {
+		_, err = clients.GetLLMInferenceService(ctx, namespace, name)
+	} else {
+		_, err = clients.GetInferenceService(ctx, namespace, name)
+	}
+	if err != nil {
 		return clusterError(err)
 	}
 

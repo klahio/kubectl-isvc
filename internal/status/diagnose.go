@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -21,6 +22,8 @@ type Severity string
 const (
 	SeverityError   Severity = "error"
 	SeverityWarning Severity = "warning"
+	// SeverityInfo marks a state that is not a problem yet, such as a model that is still loading.
+	SeverityInfo Severity = "info"
 )
 
 // LogRef points at a container whose last log lines help explain a finding.
@@ -29,6 +32,9 @@ type LogRef struct {
 	Container string `json:"container"`
 	// Previous selects the last terminated instance, for containers that already restarted.
 	Previous bool `json:"previous,omitempty"`
+	// Scan asks for a longer tail searched for a known root cause (ExplainLog) instead of just the last lines,
+	// because a crashing server's last line rarely says why (docs/mvp.md section 6a.2).
+	Scan bool `json:"scan,omitempty"`
 }
 
 // Finding is one diagnosed problem, with the evidence it is based on.
@@ -89,7 +95,7 @@ func Diagnose(s *Snapshot) []Finding {
 	out = append(out, exposureFindings(s)...)
 
 	// Nothing specific found, yet KServe says it is not Ready: show what KServe reports.
-	if len(errorsOnly(out)) == 0 && m.Ready() != "True" {
+	if len(errorsOnly(out)) == 0 && !hasInfo(out) && m.Ready() != "True" {
 		var details []string
 		for _, c := range m.Conditions {
 			if c.Status != "True" && c.Type != "Stopped" {
@@ -107,6 +113,16 @@ func Diagnose(s *Snapshot) []Finding {
 // podFindings reports at most one finding per pod: the first problem along init containers, then containers.
 // Identical findings across replicas are merged into one with a pod count.
 func podFindings(s *Snapshot) []Finding {
+	return diagnosePods(s.Pods, func(p *corev1.Pod) string {
+		if canary := s.ISVC.CanaryOf(p.Labels); canary != "" {
+			return "canary " + canary
+		}
+		return p.Labels[isvc.LabelComponent]
+	})
+}
+
+// diagnosePods applies the pod rules to any set of pods; describe names a pod's component for the output.
+func diagnosePods(all []corev1.Pod, describe func(*corev1.Pod) string) []Finding {
 	type keyed struct {
 		f     Finding
 		count int
@@ -114,11 +130,11 @@ func podFindings(s *Snapshot) []Finding {
 	var order []string
 	byKey := map[string]*keyed{}
 
-	pods := append([]corev1.Pod(nil), s.Pods...)
+	pods := append([]corev1.Pod(nil), all...)
 	sort.SliceStable(pods, func(i, j int) bool { return componentRank(pods[i]) < componentRank(pods[j]) })
 
 	for i := range pods {
-		f, ok := podFinding(&pods[i], s.ISVC.CanaryOf(pods[i].Labels))
+		f, ok := podFinding(&pods[i], describe(&pods[i]))
 		if !ok {
 			continue
 		}
@@ -142,11 +158,7 @@ func podFindings(s *Snapshot) []Finding {
 	return out
 }
 
-func podFinding(p *corev1.Pod, canary string) (Finding, bool) {
-	component := p.Labels[isvc.LabelComponent]
-	if canary != "" {
-		component = "canary " + canary
-	}
+func podFinding(p *corev1.Pod, component string) (Finding, bool) {
 	object := "pod/" + p.Name
 	if component != "" {
 		object = component + " " + object
@@ -183,6 +195,31 @@ func podFinding(p *corev1.Pod, canary string) (Finding, bool) {
 	for _, cs := range append(append([]corev1.ContainerStatus(nil), p.Status.InitContainerStatuses...), p.Status.ContainerStatuses...) {
 		if f, ok := containerFinding(p, cs, object); ok {
 			return f, true
+		}
+	}
+
+	// The model download is still running: not a failure, and the usual reason a new service is not Ready yet.
+	for _, cs := range p.Status.InitContainerStatuses {
+		if cs.Name == isvc.ContainerStorageInitial && cs.State.Running != nil {
+			return Finding{
+				Severity: SeverityInfo,
+				Title:    "Downloading the model",
+				Details:  []string{fmt.Sprintf("%s has been running for %s", cs.Name, since(cs.State.Running.StartedAt.Time))},
+				Object:   object,
+				Logs:     &LogRef{Pod: p.Name, Container: cs.Name},
+			}, true
+		}
+	}
+
+	// Running but not ready, and never restarted: a large model can take minutes to load, which is not a failure.
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.State.Running != nil && !cs.Ready && cs.RestartCount == 0 {
+			return Finding{
+				Severity: SeverityInfo,
+				Title:    "Starting",
+				Details:  []string{fmt.Sprintf("container %s has been starting for %s; loading a model can take minutes", cs.Name, since(cs.State.Running.StartedAt.Time))},
+				Object:   object,
+			}, true
 		}
 	}
 	return Finding{}, false
@@ -228,7 +265,7 @@ func containerFinding(p *corev1.Pod, cs corev1.ContainerStatus, object string) (
 			Title:    "Server crashes on start",
 			Details:  nonEmpty(fmt.Sprintf("container %s exited with code %d (%s), restarts: %d", cs.Name, t.ExitCode, t.Reason, cs.RestartCount), lastLine(t.Message)),
 			Object:   object,
-			Logs:     &LogRef{Pod: p.Name, Container: cs.Name, Previous: cs.State.Terminated == nil},
+			Logs:     &LogRef{Pod: p.Name, Container: cs.Name, Previous: cs.State.Terminated == nil, Scan: true},
 		}, true
 	}
 	return Finding{}, false
@@ -245,9 +282,12 @@ func failedTermination(cs corev1.ContainerStatus) *corev1.ContainerStateTerminat
 	return nil
 }
 
-func deploymentFindings(s *Snapshot) []Finding {
+func deploymentFindings(s *Snapshot) []Finding { return replicaFailures(s.Deployments) }
+
+// replicaFailures reports Deployments whose pods the API server refuses to create.
+func replicaFailures(deployments []appsv1.Deployment) []Finding {
 	var out []Finding
-	for _, d := range s.Deployments {
+	for _, d := range deployments {
 		for _, c := range d.Status.Conditions {
 			if c.Type == "ReplicaFailure" && c.Status == corev1.ConditionTrue {
 				out = append(out, Finding{
@@ -300,32 +340,42 @@ func exposureFindings(s *Snapshot) []Finding {
 		}
 	}
 
+	out = append(out, routeFindings(s.HTTPRoutes, s.Gateways, s.Unknown, func(object, detail string) Finding {
+		return notRoutable(s, object, detail)
+	})...)
+	return out
+}
+
+// routeFindings checks HTTPRoutes and the Gateways they attach to, for any resource kind. notRoutable builds the
+// finding, so each kind can add its own hint.
+func routeFindings(routes, gatewayList []unstructured.Unstructured, unknown map[string]string, notRoutable func(object, detail string) Finding) []Finding {
+	var out []Finding
 	gateways := map[string]*unstructured.Unstructured{}
-	for i := range s.Gateways {
-		gateways[s.Gateways[i].GetNamespace()+"/"+s.Gateways[i].GetName()] = &s.Gateways[i]
+	for i := range gatewayList {
+		gateways[gatewayList[i].GetNamespace()+"/"+gatewayList[i].GetName()] = &gatewayList[i]
 	}
-	for i := range s.HTTPRoutes {
-		r := &s.HTTPRoutes[i]
+	for i := range routes {
+		r := &routes[i]
 		object := "httproute/" + r.GetName()
 		for _, problem := range routeProblems(r) {
-			out = append(out, notRoutable(s, object, problem))
+			out = append(out, notRoutable(object, problem))
 		}
 		for _, ref := range parentRefs(r) {
 			key := ref.Namespace + "/" + ref.Name
-			if _, unknown := s.Unknown["gateway "+key]; unknown {
+			if _, unknown := unknown["gateway "+key]; unknown {
 				continue
 			}
 			gw, ok := gateways[key]
 			if !ok {
-				out = append(out, notRoutable(s, object, fmt.Sprintf("Gateway %s does not exist", key)))
+				out = append(out, notRoutable(object, fmt.Sprintf("Gateway %s does not exist", key)))
 				continue
 			}
 			if c, ok := findCondition(gw.Object, "Programmed"); !ok || c.Status != "True" {
-				out = append(out, notRoutable(s, "gateway/"+key, "Gateway is not Programmed "+joinReason(c.Reason, c.Message)))
+				out = append(out, notRoutable("gateway/"+key, "Gateway is not Programmed "+joinReason(c.Reason, c.Message)))
 				continue
 			}
 			if addrs, _, _ := unstructured.NestedSlice(gw.Object, "status", "addresses"); len(addrs) == 0 {
-				out = append(out, notRoutable(s, "gateway/"+key, "Gateway has no address"))
+				out = append(out, notRoutable("gateway/"+key, "Gateway has no address"))
 			}
 		}
 	}
@@ -457,6 +507,15 @@ func memoryLimit(p *corev1.Pod, container string) string {
 		}
 	}
 	return "no limit set"
+}
+
+func hasInfo(fs []Finding) bool {
+	for _, f := range fs {
+		if f.Severity == SeverityInfo {
+			return true
+		}
+	}
+	return false
 }
 
 func errorsOnly(fs []Finding) []Finding {

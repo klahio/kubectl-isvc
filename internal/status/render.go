@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/duration"
+
+	"github.com/klahio/kubectl-kserve/internal/isvc"
 )
 
 // Text colors, used only when the output is a terminal (docs/mvp.md section 3).
@@ -149,26 +151,35 @@ func (r TextRenderer) Render(w io.Writer, s *Summary) error {
 		tw.Flush()
 	}
 
+	r.renderTail(p, s.Conditions, s.Findings, s.Unknown)
+	return p.err
+}
+
+// renderTail writes the sections every resource kind shares: conditions, diagnosis and the parts not checked.
+func (r TextRenderer) renderTail(p *printer, conditions []isvc.Condition, findings []Finding, unknown map[string]string) {
 	p.section("Conditions")
-	tw = p.table()
-	for _, c := range s.Conditions {
+	tw := p.table()
+	for _, c := range conditions {
 		row := fmt.Sprintf("  %s\t%s", c.Type, r.conditionStatus(c.Status))
 		if reason := joinReason(c.Reason, c.Message); reason != "" {
 			row += "\t" + reason
 		}
 		fmt.Fprintln(tw, row)
 	}
-	if len(s.Conditions) == 0 {
+	if len(conditions) == 0 {
 		fmt.Fprintln(tw, "  (none reported yet)")
 	}
 	tw.Flush()
 
-	if len(s.Findings) > 0 {
+	if len(findings) > 0 {
 		p.section("Diagnosis")
-		for _, f := range s.Findings {
+		for _, f := range findings {
 			mark := r.paint(colorRed, "✗")
-			if f.Severity == SeverityWarning {
+			switch f.Severity {
+			case SeverityWarning:
 				mark = r.paint(colorYellow, "⚠")
+			case SeverityInfo:
+				mark = r.paint(colorDim, "…")
 			}
 			title := r.paint(colorBold, f.Title)
 			if f.Object != "" {
@@ -179,7 +190,11 @@ func (r TextRenderer) Render(w io.Writer, s *Summary) error {
 				p.line("      %s", d)
 			}
 			if len(f.LogLines) > 0 {
-				p.line("      last log lines of %s:", f.Logs.Container)
+				label := "last log lines of %s:"
+				if f.Logs.Scan {
+					label = "from the log of %s:"
+				}
+				p.line("      "+label, f.Logs.Container)
 				for _, l := range f.LogLines {
 					p.line("        %s", r.paint(colorDim, l))
 				}
@@ -190,17 +205,79 @@ func (r TextRenderer) Render(w io.Writer, s *Summary) error {
 		}
 	}
 
-	if len(s.Unknown) > 0 {
+	if len(unknown) > 0 {
 		p.section("Not checked")
-		parts := make([]string, 0, len(s.Unknown))
-		for part := range s.Unknown {
+		parts := make([]string, 0, len(unknown))
+		for part := range unknown {
 			parts = append(parts, part)
 		}
 		sort.Strings(parts)
 		for _, part := range parts {
-			p.line("  %s: %s", part, s.Unknown[part])
+			p.line("  %s: %s", part, unknown[part])
 		}
 	}
+}
+
+// RenderLLM writes the summary of an LLMInferenceService (docs/mvp.md section 6a.2).
+func (r TextRenderer) RenderLLM(w io.Writer, s *LLMSummary) error {
+	now := r.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	p := &printer{w: w}
+	age := "-"
+	if !s.Created.IsZero() {
+		age = duration.HumanDuration(now.Sub(s.Created))
+	}
+	p.line("%s   llminferenceservice   namespace: %s   %s   age: %s   api: %s",
+		r.paint(colorBold, s.Name), s.Namespace, r.state(s.Ready), age, dash(s.APIVersion))
+
+	p.section("Endpoints")
+	tw := p.table()
+	external := dash(s.Endpoints.External)
+	if s.Endpoints.External == "" {
+		external = "- (no router)"
+	} else if !s.Endpoints.Routable {
+		external += "   " + r.paint(colorYellow, "⚠ not routable")
+	}
+	fmt.Fprintf(tw, "  external\t%s\n", external)
+	fmt.Fprintf(tw, "  in-cluster\t%s\n", dash(s.Endpoints.InCluster))
+	for _, e := range s.Endpoints.Exposure {
+		fmt.Fprintf(tw, "  %s\t%s   via %s   address: %s\n", strings.ToLower(e.Kind), e.Name, dash(e.Via), dash(e.Address))
+	}
+	tw.Flush()
+
+	p.section("Model")
+	tw = p.table()
+	fmt.Fprintf(tw, "  name\t%s\n", dash(s.Model.Name))
+	fmt.Fprintf(tw, "  uri\t%s\n", dash(s.Model.URI))
+	if len(s.Model.LoRA) > 0 {
+		fmt.Fprintf(tw, "  lora\t%s\n", strings.Join(s.Model.LoRA, ", "))
+	}
+	fmt.Fprintf(tw, "  image\t%s\n", dash(s.Model.Image))
+	if par := formatParallelism(s.Model.Parallelism); par != "" {
+		fmt.Fprintf(tw, "  parallelism\t%s\n", par)
+	}
+	if len(s.Model.Presets) > 0 {
+		fmt.Fprintf(tw, "  presets\t%s\n", strings.Join(s.Model.Presets, ", "))
+	}
+	tw.Flush()
+
+	p.section("Workloads")
+	tw = p.table()
+	for _, wl := range s.Workloads {
+		replicas := fmt.Sprintf("replicas %d/%d", wl.ReadyReplicas, wl.Replicas)
+		if wl.Replicas < 0 {
+			replicas = fmt.Sprintf("ready replicas %d", wl.ReadyReplicas)
+		}
+		fmt.Fprintf(tw, "  %s\t%s/%s\t%s\n", wl.Role, strings.ToLower(wl.Kind), wl.Name, replicas)
+	}
+	if len(s.Workloads) == 0 {
+		fmt.Fprintln(tw, "  (none created yet)")
+	}
+	tw.Flush()
+
+	r.renderTail(p, s.Conditions, s.Findings, s.Unknown)
 	return p.err
 }
 

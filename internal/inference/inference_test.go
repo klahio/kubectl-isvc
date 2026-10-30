@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/klahio/kubectl-kserve/internal/isvc"
-	"github.com/klahio/kubectl-kserve/internal/kube"
 	"github.com/klahio/kubectl-kserve/internal/status"
 )
 
@@ -50,6 +49,8 @@ func TestChooseProtocol(t *testing.T) {
 		{name: "flag contradicts input", flag: "v2", runtime: sklearn, body: v1Body, errorHas: "does not match the input"},
 		{name: "runtime does not support it", runtime: triton, body: v1Body, errorHas: "supports v2, grpc-v2, not v1"},
 		{name: "gRPC flag", flag: "grpc-v2", body: `{}`, errorHas: "HTTP requests only"},
+		{name: "OpenAI chat body", runtime: sklearn, body: `{"messages":[]}`, want: OpenAI, because: `input has "messages"`},
+		{name: "OpenAI completion body", body: `{"prompt":"x"}`, want: OpenAI, because: `input has "prompt"`},
 		{name: "not an object", body: `[1,2]`, errorHas: "not a JSON object"},
 	}
 	for _, tt := range tests {
@@ -100,33 +101,33 @@ func server(t *testing.T, paths ...string) (*httptest.Server, *http.Request) {
 }
 
 func TestCheckPath(t *testing.T) {
-	s, _ := server(t, V1.PathTemplate())
+	s, _ := server(t, Choice{Protocol: V1}.PathTemplate())
 	ep := &Endpoint{BaseURL: s.URL}
-	if err := CheckPath(context.Background(), ep, V1); err != nil {
+	if err := CheckPath(context.Background(), ep, Choice{Protocol: V1}); err != nil {
 		t.Errorf("v1 is published: %v", err)
 	}
-	err := CheckPath(context.Background(), ep, V2)
-	if err == nil || !strings.Contains(err.Error(), "use --protocol v1") {
+	err := CheckPath(context.Background(), ep, Choice{Protocol: V2})
+	if err == nil || !strings.Contains(err.Error(), "--protocol v1") {
 		t.Errorf("err = %v, want a hint to use v1", err)
 	}
 
 	// No document at all: the check is skipped.
 	plain := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(plain.Close)
-	if err := CheckPath(context.Background(), &Endpoint{BaseURL: plain.URL}, V2); err != nil {
+	if err := CheckPath(context.Background(), &Endpoint{BaseURL: plain.URL}, Choice{Protocol: V2}); err != nil {
 		t.Errorf("without /openapi.json the check must be skipped: %v", err)
 	}
 }
 
 func TestSendAndOutputs(t *testing.T) {
-	s, last := server(t, V1.PathTemplate())
+	s, last := server(t, Choice{Protocol: V1}.PathTemplate())
 	headers, err := ParseHeaders([]string{"Authorization: Bearer test-token"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	res, err := Send(context.Background(), Request{
 		Endpoint: &Endpoint{BaseURL: "http://sklearn-iris.kserve-test.example.invalid", ConnectTo: strings.TrimPrefix(s.URL, "http://"), Route: "Ingress sklearn-iris at 127.0.0.1:80"},
-		Protocol: Choice{V1, "input has \"instances\""},
+		Protocol: Choice{Protocol: V1, Because: `input has "instances"`},
 		Model:    "sklearn-iris",
 		Body:     []byte(v1Body),
 		Headers:  headers,
@@ -181,7 +182,7 @@ func TestSummarizeV2AndErrors(t *testing.T) {
 // When the external name does not resolve from this machine, the Ingress or Gateway address still reaches the model
 // without port-forward: the URL keeps the host name and only the TCP connection goes to the address.
 func TestDiscoverHostHeaderRoute(t *testing.T) {
-	s, _ := server(t, V1.PathTemplate())
+	s, _ := server(t, Choice{Protocol: V1}.PathTemplate())
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(s.URL, "http://"))
 
 	sum := &status.Summary{Endpoints: status.Endpoints{
@@ -189,8 +190,7 @@ func TestDiscoverHostHeaderRoute(t *testing.T) {
 		Routable: false,
 		Exposure: []status.Exposure{{Kind: "HTTPRoute", Name: "sklearn-iris", Via: "Gateway gateway/lab-gateway", Address: "127.0.0.1"}},
 	}}
-	snap := &status.Snapshot{ISVC: &isvc.InferenceService{Name: "sklearn-iris"}}
-	ep, err := Discover(context.Background(), kube.Clients{}, sum, snap, DiscoverOptions{PortForward: PortForwardNever})
+	ep, err := Discover(context.Background(), Target{External: sum.Endpoints.External, Routable: sum.Endpoints.Routable, Exposure: sum.Endpoints.Exposure}, DiscoverOptions{PortForward: PortForwardNever})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestDiscoverHostHeaderRoute(t *testing.T) {
 		t.Errorf("endpoint = %+v", ep)
 	}
 	// The request reaches the server through ConnectTo even though the host name does not resolve.
-	res, err := Send(context.Background(), Request{Endpoint: ep, Protocol: Choice{V1, "test"}, Model: "sklearn-iris", Body: []byte(v1Body), Timeout: 5 * time.Second})
+	res, err := Send(context.Background(), Request{Endpoint: ep, Protocol: Choice{Protocol: V1, Because: "test"}, Model: "sklearn-iris", Body: []byte(v1Body), Timeout: 5 * time.Second})
 	if err != nil || !res.OK() {
 		t.Fatalf("send through ConnectTo: %v %+v", err, res)
 	}
@@ -208,7 +208,7 @@ func TestDiscoverHostHeaderRoute(t *testing.T) {
 }
 
 func TestDiscoverURLFlag(t *testing.T) {
-	ep, err := Discover(context.Background(), kube.Clients{}, &status.Summary{}, &status.Snapshot{}, DiscoverOptions{URL: "http://localhost:8080/"})
+	ep, err := Discover(context.Background(), Target{}, DiscoverOptions{URL: "http://localhost:8080/"})
 	if err != nil || ep.BaseURL != "http://localhost:8080" || ep.Route != "--url" {
 		t.Errorf("endpoint = %+v, %v", ep, err)
 	}
@@ -216,10 +216,10 @@ func TestDiscoverURLFlag(t *testing.T) {
 
 func TestTargetPrefersTransformer(t *testing.T) {
 	m := &isvc.InferenceService{Components: []isvc.Component{{Name: "predictor"}, {Name: "transformer"}}}
-	if Target(m) != "transformer" {
+	if TargetComponent(m) != "transformer" {
 		t.Error("requests must go through the transformer")
 	}
-	if Target(&isvc.InferenceService{Components: []isvc.Component{{Name: "predictor"}}}) != "predictor" {
+	if TargetComponent(&isvc.InferenceService{Components: []isvc.Component{{Name: "predictor"}}}) != "predictor" {
 		t.Error("without a transformer the predictor receives the request")
 	}
 }
@@ -246,5 +246,93 @@ func TestParseHeaders(t *testing.T) {
 	h, err := ParseHeaders([]string{"X-A: 1", "X-A: 2"})
 	if err != nil || len(h.Values("X-A")) != 2 {
 		t.Errorf("repeated headers: %v, %v", h, err)
+	}
+}
+
+func TestChooseProtocolOpenAIPaths(t *testing.T) {
+	chat, err := ChooseProtocol("", &isvc.InferenceService{}, nil, []byte(`{"messages":[]}`))
+	if err != nil || chat.PathTemplate() != "/openai/v1/chat/completions" {
+		t.Errorf("InferenceService chat: %q, %v", chat.PathTemplate(), err)
+	}
+	compl, err := ChooseLLMProtocol("", []byte(`{"prompt":"x"}`))
+	if err != nil || compl.PathTemplate() != "/v1/completions" {
+		t.Errorf("LLMInferenceService completions: %q, %v", compl.PathTemplate(), err)
+	}
+	if _, err := ChooseLLMProtocol("", []byte(v1Body)); err == nil || !strings.Contains(err.Error(), `"instances"`) {
+		t.Errorf("a v1 body must be refused: %v", err)
+	}
+	if _, err := ChooseLLMProtocol("v2", []byte(`{}`)); err == nil {
+		t.Error("--protocol v2 must be refused for an LLMInferenceService")
+	}
+}
+
+func TestPrepareOpenAI(t *testing.T) {
+	body, err := PrepareOpenAI(nil, "What is Kubernetes?", "m", 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req struct {
+		Model     string `json:"model"`
+		MaxTokens int    `json:"max_tokens"`
+		Messages  []struct {
+			Role, Content string
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Model != "m" || req.MaxTokens != 64 || len(req.Messages) != 1 || req.Messages[0].Content != "What is Kubernetes?" {
+		t.Errorf("prompt body = %s, %v", body, err)
+	}
+	kept, err := PrepareOpenAI([]byte(`{"model":"mine","prompt":"x"}`), "", "other", 64)
+	if err != nil || ModelOf(kept) != "mine" {
+		t.Errorf("an explicit model must be kept: %s, %v", kept, err)
+	}
+	if _, err := PrepareOpenAI([]byte(`{"messages":[],"stream":true}`), "", "m", 64); err == nil {
+		t.Error("streaming must be refused in version 0.1")
+	}
+}
+
+func TestOpenAIOutputs(t *testing.T) {
+	res := &Result{Protocol: OpenAI, StatusCode: 200, Status: "200 OK", Route: "port-forward to svc/x", DurationMs: 73,
+		Body: []byte(`{"model":"HuggingFaceTB/SmolLM2-135M-Instruct","choices":[{"message":{"content":" Kubernetes is\n a platform."},"finish_reason":"stop"}],"usage":{"prompt_tokens":41,"completion_tokens":26}}`)}
+	if got := summarize(res); got != `"Kubernetes is a platform." · 41+26 tokens` {
+		t.Errorf("summary = %q", got)
+	}
+	var out bytes.Buffer
+	if err := Write(&out, OutputPretty, res); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Kubernetes is\n a platform.\n\nmodel HuggingFaceTB/SmolLM2-135M-Instruct · finish stop · tokens 41 prompt + 26 completion") {
+		t.Errorf("pretty = %q", out.String())
+	}
+	completion := &Result{Protocol: OpenAI, Body: []byte(`{"choices":[{"text":"Paris."}],"usage":{"prompt_tokens":5,"completion_tokens":2}}`)}
+	if got := summarize(completion); got != `"Paris." · 5+2 tokens` {
+		t.Errorf("completion summary = %q", got)
+	}
+}
+
+// A vLLM server (LLMInferenceService) publishes the OpenAI paths at /v1; asking for the Hugging Face layout names it.
+func TestCheckPathOpenAILayouts(t *testing.T) {
+	s, _ := server(t, "/v1/chat/completions", "/v1/models")
+	ep := &Endpoint{BaseURL: s.URL}
+	if err := CheckPath(context.Background(), ep, Choice{Protocol: OpenAI, Endpoint: EndpointChat}); err != nil {
+		t.Errorf("vLLM layout is published: %v", err)
+	}
+	err := CheckPath(context.Background(), ep, Choice{Protocol: OpenAI, Endpoint: EndpointChat, Prefix: PrefixHuggingFace})
+	if err == nil || !strings.Contains(err.Error(), "/v1/chat/completions, an OpenAI request at /v1 (vLLM)") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestFirstModel(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"HuggingFaceTB/SmolLM2-135M-Instruct"}]}`)
+	}))
+	t.Cleanup(s.Close)
+	got, err := FirstModel(context.Background(), &Endpoint{BaseURL: s.URL}, "")
+	if err != nil || got != "HuggingFaceTB/SmolLM2-135M-Instruct" {
+		t.Errorf("got %q, %v", got, err)
 	}
 }

@@ -1,16 +1,16 @@
 # kubectl-kserve
 
-A kubectl plugin for day-to-day operation of a single [KServe](https://kserve.github.io/website/) **InferenceService**.
+A kubectl plugin for day-to-day operation of a single [KServe](https://kserve.github.io/website/) **InferenceService** or **LLMInferenceService** (KServe's resource for large language models served with vLLM).
 
 One InferenceService turns into many Kubernetes objects: a serving runtime, Deployments, pods with a model-download init container, Services, an Ingress or Gateway API HTTPRoutes, and an autoscaler. When a model is not serving, the reason is usually several objects away. KServe's own status often doesn't help: when a pod fails, the reason it reports is "Predictor ingress not created". `kubectl kserve` answers three questions with one command each:
 
 | Question | Command |
 |---|---|
 | Is my model serving, and if not, why? | `kubectl kserve status NAME` |
-| Does it actually answer a request? | `kubectl kserve test NAME -f input.json` |
+| Does it actually answer a request? | `kubectl kserve test NAME -f input.json`, or `--prompt "..."` for an LLM |
 | What did its containers print? | `kubectl kserve logs NAME` |
 
-Commands take a resource the way kubectl does: `NAME` or `isvc/NAME` is an InferenceService (`isvc` is the short name KServe registers for it). Other KServe resources, such as `llmisvc/NAME` for LLMInferenceService, are planned for later versions; see [docs/mvp.md](docs/mvp.md).
+Commands take a resource the way kubectl does: `NAME` or `isvc/NAME` is an InferenceService, `llmisvc/NAME` is an LLMInferenceService (both are the short names KServe registers).
 
 ## Install
 
@@ -133,6 +133,36 @@ kubectl kserve logs sklearn-iris -p             # the previous, crashed instance
 
 When more than one container is shown, each line is prefixed with `[component/pod/container]`. `--since`, `--tail` (default 100 lines; `-1` for all) and `--prefix auto|true|false` work as you would expect.
 
+### LLMInferenceService
+
+The same three commands work on `llmisvc/NAME`:
+
+```console
+$ kubectl kserve test llmisvc/smollm -n kserve-test --prompt "What is Kubernetes? Answer in one sentence."
+POST http://127.0.0.1:44271/v1/chat/completions
+  protocol openai (LLMInferenceService) · via port-forward to svc/smollm-kserve-workload-svc
+200 OK · 73 ms
+
+Kubernetes is a decentralized cloud-based platform for managing and controlling very large, complex applications, often over the Internet.
+
+model HuggingFaceTB/SmolLM2-135M-Instruct · finish stop · tokens 41 prompt + 26 completion
+```
+
+- `status llmisvc/NAME` shows the addresses, the model, the vLLM image, the presets the controller merged in, and the workloads (primary, prefill, scheduler) with their replicas. When the vLLM server crashes, its last log line is usually just "Engine core initialization failed". So `status` searches the last 2,000 log lines for known causes, and otherwise shows the first real error lines:
+
+  ```console
+  ✗ Server crashes on start   primary pod/llm-libcuda-kserve-664c9f846b-ktmtd
+      container main exited with code 1 (Error), restarts: 1
+      cause: Triton cannot find the NVIDIA driver library libcuda.so.1
+      from the log of main:
+        /usr/bin/ld: cannot find -l:libcuda.so.1
+      hint: set TRITON_LIBCUDA_PATH to the node's driver directory: /usr/lib/x86_64-linux-gnu on Ubuntu or Debian nodes, /usr/lib64 on RHEL-family nodes
+  ```
+
+  Known causes so far: the driver library path above, GPU out of memory, no GPU visible, and a refused Hugging Face download.
+- `test llmisvc/NAME` sends OpenAI-compatible requests: `--prompt "text"` (with `--max-tokens`, default 64), or `-f` with a body that has `messages` (chat) or `prompt` (completion). The model name comes from the input, `spec.model.name`, or `/v1/models`. The same OpenAI mode works for InferenceServices on KServe's Hugging Face runtime, which serves the API under `/openai`. The default timeout is 2 minutes, because the first request to a freshly started model server can be slow. Streaming is not supported yet.
+- `logs llmisvc/NAME` shows the vLLM container `main`; `-c` picks `main`, `prefill`, `scheduler`, `worker` or `all`.
+
 ### Common flags and exit codes
 
 Every command takes the usual kubectl connection flags: `-n`, `--context`, `--kubeconfig`, `--as` and the others. `--no-color` or `NO_COLOR` turns colors off.
@@ -149,6 +179,7 @@ Every command takes the usual kubectl connection flags: `-n`, `--context`, `--ku
 | | Supported |
 |---|---|
 | KServe | v0.16 – v0.21. Tested on v0.21.0; v0.16 – v0.20 are covered by comparing the KServe source of each release, not yet by tests |
+| LLMInferenceService | `serving.kserve.io/v1alpha2` (KServe v0.17+) or `v1alpha1` (v0.16), whichever the cluster serves. Tested without a router; router setups (Gateway API Inference Extension) are covered by unit tests only |
 | Deployment mode | Standard (formerly RawDeployment). Knative (Serverless) mode is not supported yet |
 | Exposure | Kubernetes Ingress and Gateway API HTTPRoute |
 | Canary rollouts | `spec.canary` (KServe v0.21, Standard mode) |
@@ -159,6 +190,7 @@ The plugin reads KServe objects as unstructured data and checks for fields rathe
 
 `kubectl kserve` never creates, changes or deletes cluster objects. It needs:
 - `get` and `list` on `inferenceservices`, `servingruntimes`, `clusterservingruntimes`, `pods`, `pods/log`, `deployments`, `horizontalpodautoscalers`, `services`, `ingresses`, `ingressclasses`, `httproutes`, `gateways` and `events`
+- for LLMInferenceServices also `llminferenceservices` and, for multi-node services, `leaderworkersets`
 - `create` on `pods/portforward`, for `test`
 
 A missing permission on an optional object shows up as "not checked" instead of failing the command.
@@ -168,7 +200,8 @@ A missing permission on an optional object shows up as "not checked" instead of 
 ```bash
 go test ./...                              # unit tests, using objects captured from a real cluster
 go test ./internal/status -update          # refresh the golden output files after an intended layout change
-hack/capture-fixtures.sh NAMESPACE DIR     # capture new fixtures from a cluster
+hack/capture-fixtures.sh NAMESPACE DIR     # capture InferenceService fixtures from a cluster
+hack/capture-llm-fixtures.sh NAMESPACE DIR # capture LLMInferenceService fixtures, with crashed server logs
 go run github.com/goreleaser/goreleaser/v2@v2.18.3 release --snapshot --clean   # local release build
 ```
 

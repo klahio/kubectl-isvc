@@ -5,9 +5,10 @@ metadata:
 spec:
   version: {{ .TagName }}
   homepage: https://github.com/klahio/kubectl-kserve
-  shortDescription: Diagnose, smoke-test and read logs of KServe InferenceServices
+  shortDescription: Diagnose, smoke-test and read logs of KServe model services
   description: |
-    A KServe InferenceService fans out into a serving runtime, Deployments,
+    A KServe InferenceService or LLMInferenceService fans out into a serving
+    runtime, Deployments,
     pods with a model-download init container, Services, an Ingress or Gateway
     API routes, and an autoscaler. When a model is not serving, the cause is
     usually several objects away, and KServe's own Ready reason often points
@@ -17,13 +18,16 @@ spec:
     This plugin follows that chain for you. It names the actual root cause:
     a failed model download, an image that cannot be pulled, a crash or an
     out-of-memory kill, a pod that cannot be scheduled, a model format without
-    a runtime, or an external address that cannot be reached. It also sends a
-    smoke-test request without you knowing the address or the inference
+    a runtime, or an external address that cannot be reached. For vLLM
+    servers it searches the crash log for the actual cause, because the last
+    line rarely says it. It also sends a smoke-test request (an OpenAI chat
+    prompt for language models) without you knowing the address or the
     protocol, falling back to port-forward when the model is not exposed. And
     it shows the right container logs without pod names.
 
-    Supports KServe v0.16 to v0.21 in Standard mode, with Ingress or Gateway
-    API, including canary rollouts. Read-only: it never changes the cluster.
+    Supports KServe v0.16 to v0.21: InferenceServices in Standard mode, with
+    Ingress or Gateway API, including canary rollouts, and LLMInferenceServices.
+    Read-only: it never changes the cluster.
   caveats: |
     The plugin only reads cluster objects. `kubectl kserve test` also needs
     permission to create pods/portforward when it falls back to port-forward.

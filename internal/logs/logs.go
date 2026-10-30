@@ -17,16 +17,70 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/klahio/kubectl-kserve/internal/isvc"
+	"github.com/klahio/kubectl-kserve/internal/llmisvc"
 )
 
-// ComponentAll selects predictor, transformer and explainer pods together.
+// ComponentAll selects the pods of every component together.
 const ComponentAll = "all"
 
-// Components accepted by --component.
-var Components = []string{"predictor", "transformer", "explainer", ComponentAll}
+// Layout describes how one resource kind labels its pods and names its server container.
+type Layout struct {
+	// Kind is used in messages, for example "LLMInferenceService".
+	Kind string
+	// Selector returns the label selector for all pods of one resource.
+	Selector func(name string) string
+	// ComponentOf names a pod's component from its labels.
+	ComponentOf func(labels map[string]string) string
+	// Components are the --component values without "all"; the first one is the default.
+	Components      []string
+	ServerContainer string
+}
+
+// InferenceServiceLayout: pods carry serving.kserve.io/inferenceservice and component labels (docs/mvp.md section 6).
+var InferenceServiceLayout = Layout{
+	Kind:            "InferenceService",
+	Selector:        func(name string) string { return isvc.LabelInferenceService + "=" + name },
+	ComponentOf:     func(l map[string]string) string { return l[isvc.LabelComponent] },
+	Components:      []string{"predictor", "transformer", "explainer"},
+	ServerContainer: isvc.ContainerServer,
+}
+
+// LLMInferenceServiceLayout: components main (the primary workload), prefill, scheduler and worker (the non-leader
+// pods of a multi-node LeaderWorkerSet), from docs/mvp.md section 6a.4.
+var LLMInferenceServiceLayout = Layout{
+	Kind:     "LLMInferenceService",
+	Selector: llmisvc.Selector,
+	ComponentOf: func(l map[string]string) string {
+		if llmisvc.IsWorker(l) {
+			return "worker"
+		}
+		if role := llmisvc.RoleOf(l); role != llmisvc.RolePrimary {
+			return role
+		}
+		return "main"
+	},
+	Components:      []string{"main", "prefill", "scheduler", "worker"},
+	ServerContainer: llmisvc.ContainerServer,
+}
+
+// Accepted returns the --component values of a layout, "all" included.
+func (l Layout) Accepted() []string {
+	return append(append([]string(nil), l.Components...), ComponentAll)
+}
+
+func (l Layout) rank(component string) int {
+	for i, c := range l.Components {
+		if c == component {
+			return i
+		}
+	}
+	return len(l.Components)
+}
 
 // Options mirror the logs command's flags.
 type Options struct {
+	// Layout is the resource kind; the zero value means InferenceServiceLayout.
+	Layout        Layout
 	Component     string
 	Init          bool
 	AllContainers bool
@@ -62,9 +116,10 @@ func (s Stream) Label() string {
 
 // Select returns the streams for the given pods, in a stable order: component, then pod, then container order in the spec.
 func Select(pods []corev1.Pod, o Options) []Stream {
+	l := o.layout()
 	sorted := append([]corev1.Pod(nil), pods...)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		ci, cj := componentRank(sorted[i]), componentRank(sorted[j])
+		ci, cj := l.rank(l.ComponentOf(sorted[i].Labels)), l.rank(l.ComponentOf(sorted[j].Labels))
 		if ci != cj {
 			return ci < cj
 		}
@@ -73,18 +128,25 @@ func Select(pods []corev1.Pod, o Options) []Stream {
 
 	var out []Stream
 	for _, p := range sorted {
-		component := p.Labels[isvc.LabelComponent]
+		component := l.ComponentOf(p.Labels)
 		if o.Component != ComponentAll && component != o.Component {
 			continue
 		}
-		for _, name := range containerNames(p, o) {
+		for _, name := range containerNames(p, o, l.ServerContainer) {
 			out = append(out, Stream{Component: component, Pod: p.Name, Container: name})
 		}
 	}
 	return out
 }
 
-func containerNames(p corev1.Pod, o Options) []string {
+func (o Options) layout() Layout {
+	if o.Layout.Selector == nil {
+		return InferenceServiceLayout
+	}
+	return o.Layout
+}
+
+func containerNames(p corev1.Pod, o Options, server string) []string {
 	var names []string
 	switch {
 	case o.AllContainers:
@@ -102,7 +164,7 @@ func containerNames(p corev1.Pod, o Options) []string {
 		}
 	default:
 		for _, c := range p.Spec.Containers {
-			if c.Name == isvc.ContainerServer {
+			if c.Name == server {
 				return []string{c.Name}
 			}
 		}
@@ -112,19 +174,6 @@ func containerNames(p corev1.Pod, o Options) []string {
 		}
 	}
 	return names
-}
-
-func componentRank(p corev1.Pod) int {
-	switch p.Labels[isvc.LabelComponent] {
-	case "predictor":
-		return 0
-	case "transformer":
-		return 1
-	case "explainer":
-		return 2
-	default:
-		return 3
-	}
 }
 
 // ErrNoPods means no pod matched the InferenceService and component.
@@ -157,7 +206,7 @@ func (s *Streamer) Run(ctx context.Context) error {
 	}
 	streams := Select(pods, s.Options)
 	if len(streams) == 0 && !s.Options.Follow {
-		return fmt.Errorf("%w for InferenceService %s/%s (component %s%s)", ErrNoPods, s.Namespace, s.Name, s.Options.Component, initNote(s.Options))
+		return fmt.Errorf("%w for %s %s/%s (component %s%s)", ErrNoPods, s.Options.layout().Kind, s.Namespace, s.Name, s.Options.Component, initNote(s.Options))
 	}
 	s.prefix = len(streams) > 1 || s.Options.Component == ComponentAll
 	if s.Options.Prefix != nil {
@@ -225,7 +274,7 @@ func (s *Streamer) follow(ctx context.Context, pods []corev1.Pod) error {
 	for {
 		streams := Select(pods, s.Options)
 		if len(streams) == 0 && !waited {
-			fmt.Fprintf(s.Notes, "waiting for pods of InferenceService %s/%s (component %s)…\n", s.Namespace, s.Name, s.Options.Component)
+			fmt.Fprintf(s.Notes, "waiting for pods of %s %s/%s (component %s)…\n", s.Options.layout().Kind, s.Namespace, s.Name, s.Options.Component)
 			waited = true
 		}
 		if len(streams) > 1 {
@@ -343,7 +392,7 @@ func (s *Streamer) paint(st Stream, text string) string {
 }
 
 func (s *Streamer) listPods(ctx context.Context) ([]corev1.Pod, error) {
-	list, err := s.Kube.CoreV1().Pods(s.Namespace).List(ctx, metav1.ListOptions{LabelSelector: isvc.LabelInferenceService + "=" + s.Name})
+	list, err := s.Kube.CoreV1().Pods(s.Namespace).List(ctx, metav1.ListOptions{LabelSelector: s.Options.layout().Selector(s.Name)})
 	if err != nil {
 		return nil, err
 	}

@@ -6,28 +6,31 @@ import (
 	"testing"
 )
 
-func TestInferenceServiceName(t *testing.T) {
+func TestResourceArg(t *testing.T) {
 	tests := []struct {
 		arg      string
-		want     string
+		kind     Kind
+		name     string
 		errorHas string
 	}{
-		{arg: "sklearn-iris", want: "sklearn-iris"},
-		{arg: "isvc/sklearn-iris", want: "sklearn-iris"},
-		{arg: "InferenceService/sklearn-iris", want: "sklearn-iris"},
-		{arg: "inferenceservices.serving.kserve.io/sklearn-iris", want: "sklearn-iris"},
-		{arg: "llmisvc/qwen", errorHas: "LLMInferenceService is not supported yet"},
+		{arg: "sklearn-iris", kind: KindInferenceService, name: "sklearn-iris"},
+		{arg: "isvc/sklearn-iris", kind: KindInferenceService, name: "sklearn-iris"},
+		{arg: "InferenceService/sklearn-iris", kind: KindInferenceService, name: "sklearn-iris"},
+		{arg: "inferenceservices.serving.kserve.io/sklearn-iris", kind: KindInferenceService, name: "sklearn-iris"},
+		{arg: "llmisvc/smollm", kind: KindLLMInferenceService, name: "smollm"},
+		{arg: "LLMInferenceService/smollm", kind: KindLLMInferenceService, name: "smollm"},
+		{arg: "llminferenceservices.serving.kserve.io/smollm", kind: KindLLMInferenceService, name: "smollm"},
 		{arg: "ig/graph", errorHas: "InferenceGraph is not supported yet"},
 		{arg: "deploy/x", errorHas: `unknown resource type "deploy"`},
 		{arg: "isvc/", errorHas: "is not a resource name"},
-		{arg: "isvc/a/b", errorHas: "is not a resource name"},
+		{arg: "llmisvc/a/b", errorHas: "is not a resource name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.arg, func(t *testing.T) {
-			got, err := inferenceServiceName(tt.arg)
+			kind, name, err := resourceArg(tt.arg)
 			if tt.errorHas == "" {
-				if err != nil || got != tt.want {
-					t.Fatalf("got %q, %v; want %q", got, err, tt.want)
+				if err != nil || kind != tt.kind || name != tt.name {
+					t.Fatalf("got %s %q, %v; want %s %q", kind, name, err, tt.kind, tt.name)
 				}
 				return
 			}

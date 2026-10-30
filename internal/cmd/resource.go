@@ -4,16 +4,29 @@ import (
 	"strings"
 )
 
-// Resource types written the way kubectl accepts them: short name, kind, plural, and plural with the API group.
+// Kind is a KServe resource kind the commands handle.
+type Kind string
+
+const (
+	KindInferenceService    Kind = "InferenceService"
+	KindLLMInferenceService Kind = "LLMInferenceService"
+)
+
+// Resource types written the way kubectl accepts them: short name, kind and plural. The API-group suffix
+// ".serving.kserve.io" is accepted on every spelling.
 var (
-	inferenceServiceTypes = []string{"isvc", "inferenceservice", "inferenceservices", "inferenceservices.serving.kserve.io"}
+	supportedTypes = map[string]Kind{
+		"isvc":                 KindInferenceService,
+		"inferenceservice":     KindInferenceService,
+		"inferenceservices":    KindInferenceService,
+		"llmisvc":              KindLLMInferenceService,
+		"llminferenceservice":  KindLLMInferenceService,
+		"llminferenceservices": KindLLMInferenceService,
+	}
 
 	// Other KServe resources the plugin is meant to grow into (docs/mvp.md section 9). Naming them gives a clear
 	// "not supported yet" instead of "unknown type".
 	plannedTypes = map[string]string{
-		"llmisvc":               "LLMInferenceService",
-		"llminferenceservice":   "LLMInferenceService",
-		"llminferenceservices":  "LLMInferenceService",
 		"ig":                    "InferenceGraph",
 		"inferencegraph":        "InferenceGraph",
 		"inferencegraphs":       "InferenceGraph",
@@ -26,24 +39,21 @@ var (
 	}
 )
 
-// inferenceServiceName accepts NAME or TYPE/NAME, as kubectl does, and returns the InferenceService name.
-// A bare NAME means an InferenceService.
-func inferenceServiceName(arg string) (string, error) {
+// resourceArg accepts NAME or TYPE/NAME, as kubectl does. A bare NAME means an InferenceService.
+func resourceArg(arg string) (Kind, string, error) {
 	kind, name, typed := strings.Cut(arg, "/")
 	if !typed {
 		name, kind = arg, "isvc"
 	}
 	if name == "" || strings.Contains(name, "/") {
-		return "", usage("%q is not a resource name; use NAME or isvc/NAME", arg)
+		return "", "", usage("%q is not a resource name; use NAME or TYPE/NAME, for example isvc/NAME or llmisvc/NAME", arg)
 	}
-	k := strings.ToLower(kind)
-	for _, t := range inferenceServiceTypes {
-		if k == t || k == strings.TrimSuffix(t, ".serving.kserve.io") {
-			return name, nil
-		}
+	k := strings.TrimSuffix(strings.ToLower(kind), ".serving.kserve.io")
+	if found, ok := supportedTypes[k]; ok {
+		return found, name, nil
 	}
-	if full, ok := plannedTypes[strings.TrimSuffix(k, ".serving.kserve.io")]; ok {
-		return "", usage("%s is not supported yet; this version handles InferenceServices (isvc/NAME) only", full)
+	if full, ok := plannedTypes[k]; ok {
+		return "", "", usage("%s is not supported yet; this version handles InferenceServices (isvc/NAME) and LLMInferenceServices (llmisvc/NAME)", full)
 	}
-	return "", usage("unknown resource type %q; use NAME or isvc/NAME", kind)
+	return "", "", usage("unknown resource type %q; use NAME, isvc/NAME or llmisvc/NAME", kind)
 }
