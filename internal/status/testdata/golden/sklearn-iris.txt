@@ -3,7 +3,7 @@ sklearn-iris   namespace: kserve-test   mode: Standard   Ready   age: 57m
 Endpoints
   external     http://sklearn-iris-kserve-test.example.com   ⚠ not routable
   in-cluster   http://sklearn-iris-predictor.kserve-test.svc.cluster.local
-  ingress      sklearn-iris   via IngressClass istio   address: -
+  ingress      sklearn-iris   via IngressClass istio   address: -   not routable
 
 Model
   format    sklearn

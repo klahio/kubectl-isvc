@@ -77,7 +77,7 @@ KServe in Standard mode exposes an InferenceService in one of two ways, dependin
 - **Kubernetes Ingress** (the default): one Ingress per InferenceService.
 - **Gateway API**: one or more HTTPRoutes attached to a shared Gateway.
 
-The plugin finds these objects through their owner reference to the InferenceService, so it does not depend on naming conventions. It then reports, in the same terms for both kinds:
+The plugin finds these objects through their owner reference to the InferenceService, so it does not depend on naming conventions (pods, Deployments and autoscalers are found through the `serving.kserve.io/inferenceservice` label). It then reports, in the same terms for both kinds:
 - whether the route was accepted by its controller
 - whether it points at existing Services
 - the address of the Ingress load balancer, or of the Gateway
@@ -108,8 +108,9 @@ By default `status` is informational: it exits 0 whatever the InferenceService's
 ### Permissions
 
 Version 0.1 only needs read access, plus `pods/portforward` for `test`.
-- `get` and `list` on: `inferenceservices`, `servingruntimes`, `clusterservingruntimes`, `pods`, `pods/log`, `deployments`, `replicasets`, `services`, `ingresses`, `ingressclasses`, `httproutes`, `gateways`, `events`
-- For LLMInferenceServices also: `llminferenceservices`, `llminferenceserviceconfigs`, `leaderworkersets` (multi-node only) and `inferencepools` (with a router only)
+- `get` and `list` in the namespace on: `inferenceservices`, `servingruntimes`, `pods`, `deployments`, `horizontalpodautoscalers`, `services`, `ingresses`, `httproutes`, `events`; `get` on `pods/log`
+- Cluster-wide: `get` and `list` on `clusterservingruntimes` and `ingressclasses`; `get` on `gateways` in the Gateway's namespace
+- For LLMInferenceServices also: `llminferenceservices` and `leaderworkersets` (multi-node only), and API discovery of the `serving.kserve.io` group
 - Missing permission for an optional object (for example `gateways`) downgrades that part of the output to "unknown (no permission)" instead of failing the command.
 - `create` on `pods/portforward`
 
@@ -164,7 +165,7 @@ Events are shown only when they help. Known noise is hidden. Example: `UpdateFai
 |---|---|---|
 | `-o, --output` | human-readable | `json` or `yaml`: a structured summary (not the raw object) for scripts |
 | `--events` | off | Also list every recent event for the related objects |
-| `-w, --watch` | off | Redraw when the InferenceService or its pods change |
+| `-w, --watch` | off | Redraw every 2 seconds until interrupted |
 | `--exit-code` | off | Exit 1 when the InferenceService is not Ready (section 3). With `--watch`, the exit code reflects the state when the user stops watching |
 
 ### Example output (target design)
@@ -211,9 +212,11 @@ Sends one smoke-test inference request and prints the response. You don't need t
 
 1. If a transformer exists, send to the transformer. Otherwise, send to the predictor.
 2. If `--url` is given, use that address.
-3. Otherwise, try the external address (`status.url`) with a short timeout (2 seconds).
-4. If its host name does not resolve from this machine, but the Ingress load balancer or the Gateway has an address, keep the external URL and only send the TCP connection to that address, as `curl --resolve` does. The Host header, the TLS server name and the certificate check then all use the real host name. This tests the real ingress path without any DNS setup. A leftover Ingress (see 4.2) is never used.
-5. If that fails too, port-forward to the component's Service (port 80) on a free local port. Close the port-forward when the command ends.
+3. Otherwise, try the external address (`status.url`) with a short timeout (2 seconds), but only when an Ingress or HTTPRoute that the diagnosis found healthy publishes it. When those objects cannot be read, nothing vouches for the host name, which with KServe's default domain may belong to an unrelated site.
+4. If its host name does not resolve from this machine, but the Ingress load balancer or the Gateway has an address, keep the external URL and only send the TCP connection to that address, as `curl --resolve` does. The Host header, the TLS server name and the certificate check then all use the real host name. This tests the real ingress path without any DNS setup. A leftover Ingress (see 4.2), and an Ingress, HTTPRoute or Gateway that the diagnosis found not routable, is never used.
+5. If that fails too, port-forward to the component's Service (port 80) on a free local port, waiting at most 30 seconds for it to start. Close the port-forward when the command ends.
+
+A route counts as working when the TCP connection succeeds and a `GET /` through it gets an HTTP answer other than 502, 503 or 504; a TLS failure or a proxy error moves on to the next route. The inference request itself is sent only once, on the chosen route.
 
 The command always says which route it used ("via port-forward to svc/sklearn-iris-predictor").
 
@@ -321,15 +324,15 @@ Labels on the workload objects: `app.kubernetes.io/part-of=llminferenceservice`,
 
 Status (v1alpha2): `url` (only with a router), `addresses[].url`, `conditions` (`Ready`, `MainWorkloadReady`, `WorkloadsReady`, `RouterReady`, `PresetsCombined`, and prefill or scheduler conditions when those exist), `workloads.primary|prefill|scheduler|service` (references with `readyReplicas`), `router` (`gateways`, `scheduler.inferencePool`), and `appliedConfigs` (the LLMInferenceServiceConfig presets merged into the spec).
 
-**Version differences** (compared in the CRD schemas): `v1alpha1`, the only version in KServe v0.16, has no `status.workloads` and no `status.appliedConfigs`. There, the plugin finds the workloads through owner references and the labels above. The plugin asks the API server which version it serves and prefers `v1alpha2`.
+**Version differences** (compared in the CRD schemas): `v1alpha1`, the only version in KServe v0.16, has no `status.workloads` and no `status.appliedConfigs`. There, the plugin finds the workloads through the labels above. The plugin asks the API server which version it serves and prefers `v1alpha2`.
 
 ### 6a.2 `status llmisvc/NAME`
 
 Shows, in the same layout as section 4:
 1. **Header**: name, namespace, Ready, age, API version
-2. **Endpoints**: `status.url`, every `status.addresses[].url`; with a router, the HTTPRoute, its Gateway and the InferencePool
+2. **Endpoints**: `status.url`, the first `status.addresses[].url`; with a router, the HTTPRoutes and their Gateways
 3. **Model**: `spec.model.uri`, the served model name (`spec.model.name`), LoRA adapters, the `main` container image, the parallelism settings (tensor, data, pipeline), and the presets in `appliedConfigs`
-4. **Workloads**: primary (decode), prefill and scheduler, each with ready and desired replicas; for multi-node workloads, the LeaderWorkerSet group size
+4. **Workloads**: primary (decode), prefill and scheduler Deployments and LeaderWorkerSets, each with ready and desired replicas
 5. **Conditions** and **Diagnosis**
 
 Diagnosis: all pod rules of section 4.2 apply to the workload pods (model download, image pull, crash, out of memory, scheduling). In addition:
@@ -340,7 +343,7 @@ Diagnosis: all pod rules of section 4.2 apply to the workload pods (model downlo
 | Server still loading, not crashed | Startup probe failing, no restarts yet | "Starting: model loading can take minutes", with the elapsed time, so it is not mistaken for a failure |
 | A preset cannot be applied | `PresetsCombined=False` | The condition message (for example a missing LLMInferenceServiceConfig in `spec.baseRefs`) |
 | Multi-node without LeaderWorkerSet | `spec.worker` set, and the `leaderworkersets` API is missing | "LeaderWorkerSet is not installed" |
-| Router problems | `RouterReady=False`; HTTPRoute `Accepted` or `ResolvedRefs` not True; InferencePool or scheduler not ready | The failing object and its condition. A Gateway implementation without Inference Extension support shows up as an HTTPRoute whose InferencePool backend is not resolved |
+| Router problems | `RouterReady=False`; HTTPRoute `Accepted` or `ResolvedRefs` not True; Gateway missing, not Programmed or without an address | The failing object and its condition. A Gateway implementation without Inference Extension support shows up as an HTTPRoute whose backend is not resolved. The InferencePool object itself is not read in version 0.1 |
 
 Known vLLM start-up causes. Each one is matched in the log and printed with a hint:
 
@@ -378,7 +381,7 @@ LLMInferenceServices serve vLLM's OpenAI-compatible API, at the root (`/v1/...`)
   - `test llmisvc/smollm --prompt "What is Kubernetes?"` returns an answer through port-forward, with no other flags.
   - `logs llmisvc/smollm` shows the vLLM start-up lines.
 - With `TRITON_LIBCUDA_PATH` removed from the sample, `status` names `cannot find -l:libcuda.so.1` and the hint, not "Engine core initialization failed".
-- Against `v1alpha1` objects (KServe v0.16), `status` still lists the workloads (found through owner references). Not verifiable on the lab cluster; covered by a unit test with an edited fixture.
+- Against `v1alpha1` objects (KServe v0.16), `status` still lists the workloads (found through their labels). Not verifiable on the lab cluster; covered by a unit test with an edited fixture.
 
 ### 6a.6 Lab setup
 
@@ -404,7 +407,7 @@ End-to-end checks run against the lab cluster, namespace `kserve-test`, with the
 | `examples/llmisvc-smollm.yaml` (LLMInferenceService, no router) | Healthy; acceptance criteria of section 6a.5 |
 | `examples/broken/llmisvc-libcuda.yaml` (the sample without `TRITON_LIBCUDA_PATH`) | `status` names `cannot find -l:libcuda.so.1` with the hint |
 | `examples/broken/llmisvc-bad-model.yaml` (a model URI that does not exist) | `status` diagnoses the model download failure |
-| LLMInferenceService with a router whose Gateway lacks Inference Extension support | `status` diagnoses the unresolved InferencePool backend (unit test with an edited fixture, until a router is installed) |
+| LLMInferenceService with a router whose Gateway lacks Inference Extension support | Not tested yet: no router on the lab cluster and no fixture. The HTTPRoute and Gateway rules shared with InferenceServices are unit-tested |
 
 ### Exposure setups
 
@@ -447,9 +450,9 @@ Decided 2026-10-29:
    - **`TYPE/NAME` arguments**: like kubectl (`kubectl logs deploy/x`), every command takes `NAME` or `TYPE/NAME`. A bare `NAME`, or `isvc/NAME`, `inferenceservice/NAME` and the plural and API-group spellings, mean an InferenceService. `llmisvc/NAME` (and `llminferenceservice/NAME`) means an LLMInferenceService (decision 6). Other KServe types (`ig`, `tm`, the runtimes) give a usage error saying they are not supported yet, and unknown types give "unknown resource type". Each type has its own handler behind the same commands.
    - **Keeping a rename cheap**: the name is spelled out in one place in the code, `version.Name`. Messages build "kubectl kserve" from `version.Command`.
 
-6. **LLMInferenceService in version 0.1**: `status`, `test` and `logs` support `llmisvc/NAME` (section 6a). This brings the OpenAI-compatible request mode into 0.1, for LLMInferenceServices and for InferenceServices on the Hugging Face runtime. Router-based setups (Gateway API Inference Extension) are diagnosed from their objects, but tested only with fixtures until a router is installed on the lab cluster.
+6. **LLMInferenceService in version 0.1**: `status`, `test` and `logs` support `llmisvc/NAME` (section 6a). This brings the OpenAI-compatible request mode into 0.1, for LLMInferenceServices and for InferenceServices on the Hugging Face runtime. Router-based setups (Gateway API Inference Extension) are diagnosed from `RouterReady` and their HTTPRoutes and Gateways, but not tested until a router is installed on the lab cluster.
 7. **No `create` command**: creating or editing resources stays with YAML and `kubectl apply`. The plugin stays read-only.
-8. **Release**: the `v0.1.0` tag pushed before decision 6 (pointing at `2c54901`, no release published) is to be deleted, and `v0.1.0` re-tagged once section 6a is implemented.
+8. **Release**: done. The early `v0.1.0` tag (before decision 6) was deleted, and `v0.1.0` was released from `3170603` on 2026-10-30 with section 6a. Fixes from the review before the krew-index submission go into `v0.1.1`.
 
 ### Still open
 

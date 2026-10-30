@@ -15,7 +15,7 @@ spec:
     somewhere else (for example "Predictor ingress not created" when the pod
     is out of memory).
 
-    This plugin follows that chain for you. It names the actual root cause:
+    This plugin follows that chain for you and names the common causes:
     a failed model download, an image that cannot be pulled, a crash or an
     out-of-memory kill, a pod that cannot be scheduled, a model format without
     a runtime, or an external address that cannot be reached. For vLLM
@@ -29,6 +29,8 @@ spec:
     Ingress or Gateway API, including canary rollouts, and LLMInferenceServices.
     Read-only: it never changes the cluster.
   caveats: |
+    This is a community plugin, not part of the KServe project. It supports
+    KServe's Standard deployment mode only (not Knative serverless).
     The plugin only reads cluster objects. `kubectl kserve test` also needs
     permission to create pods/portforward when it falls back to port-forward.
   platforms:

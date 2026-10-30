@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,8 +35,12 @@ const (
 	PortForwardNever  = "never"
 )
 
-// probeTimeout is how long a route may take to accept a connection before the next route is tried.
+// probeTimeout is how long a route may take to accept a connection, or to answer a probe request, before the next
+// route is tried.
 const probeTimeout = 2 * time.Second
+
+// portForwardTimeout bounds the port-forward set-up; --timeout covers only the inference request.
+const portForwardTimeout = 30 * time.Second
 
 // Endpoint is where the request goes and how it got there.
 type Endpoint struct {
@@ -70,6 +75,8 @@ func TargetComponent(m *isvc.InferenceService) string {
 // Target is what route discovery needs to know about one resource, whatever its kind.
 type Target struct {
 	External string
+	// Routable is true only when the diagnosis found no problem and at least one Ingress or HTTPRoute publishes the
+	// address. When the exposure objects could not be read, nothing vouches for the host name (see routable).
 	Routable bool
 	Exposure []status.Exposure
 	// PortForward opens the last-resort route.
@@ -80,7 +87,7 @@ type Target struct {
 func InferenceServiceTarget(c kube.Clients, sum *status.Summary, snap *status.Snapshot) Target {
 	return Target{
 		External: sum.Endpoints.External,
-		Routable: sum.Endpoints.Routable,
+		Routable: routable(sum.Endpoints),
 		Exposure: sum.Endpoints.Exposure,
 		PortForward: func(ctx context.Context) (*Endpoint, error) {
 			return portForwardISVC(ctx, c, snap, TargetComponent(snap.ISVC))
@@ -92,7 +99,7 @@ func InferenceServiceTarget(c kube.Clients, sum *status.Summary, snap *status.Sn
 func LLMInferenceServiceTarget(c kube.Clients, sum *status.LLMSummary, snap *status.LLMSnapshot) Target {
 	return Target{
 		External: sum.Endpoints.External,
-		Routable: sum.Endpoints.Routable,
+		Routable: routable(sum.Endpoints),
 		Exposure: sum.Endpoints.Exposure,
 		PortForward: func(ctx context.Context) (*Endpoint, error) {
 			svc := llmWorkloadService(snap.Services)
@@ -102,6 +109,10 @@ func LLMInferenceServiceTarget(c kube.Clients, sum *status.LLMSummary, snap *sta
 			return portForwardService(ctx, c, svc, "llmisvc/"+snap.Service.Name)
 		},
 	}
+}
+
+func routable(e status.Endpoints) bool {
+	return e.Routable && slices.ContainsFunc(e.Exposure, status.Exposure.Usable)
 }
 
 // llmWorkloadService picks the Service in front of the primary workload ("<name>-kserve-workload-svc").
@@ -139,22 +150,26 @@ func Discover(ctx context.Context, t Target, o DiscoverOptions) (*Endpoint, erro
 		if err == nil {
 			// The diagnosis already knows when the external address cannot work. Probing it anyway would be
 			// dangerous: with KServe's default domain the name may resolve to a real, unrelated web site.
-			if t.Routable && reachable(ctx, hostPort(ext)) {
-				return &Endpoint{BaseURL: trimSlash(t.External), Route: "external address"}, nil
+			if t.Routable {
+				ep := &Endpoint{BaseURL: trimSlash(t.External), Route: "external address"}
+				if reachable(ctx, hostPort(ext)) && answers(ctx, ep) {
+					return ep, nil
+				}
 			}
 			tried = append(tried, "external address "+ext.Host+" (not routable)")
 
 			for _, e := range t.Exposure {
-				if e.Address == "" || e.Leftover {
+				if !e.Usable() {
 					continue
 				}
 				addr := net.JoinHostPort(e.Address, port(ext))
-				if reachable(ctx, addr) {
-					return &Endpoint{
-						BaseURL:   trimSlash(t.External),
-						ConnectTo: addr,
-						Route:     fmt.Sprintf("%s %s at %s", e.Kind, e.Name, addr),
-					}, nil
+				ep := &Endpoint{
+					BaseURL:   trimSlash(t.External),
+					ConnectTo: addr,
+					Route:     fmt.Sprintf("%s %s at %s", e.Kind, e.Name, addr),
+				}
+				if reachable(ctx, addr) && answers(ctx, ep) {
+					return ep, nil
 				}
 				tried = append(tried, fmt.Sprintf("%s address %s", e.Kind, addr))
 			}
@@ -185,6 +200,28 @@ func (e *Endpoint) client() *http.Client {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // self-signed server behind a port-forward
 	}
 	return &http.Client{Transport: transport}
+}
+
+// answers sends a GET for the root path through the route, which no model server treats as an inference request.
+// A TLS failure, a connection reset or a 502, 503 or 504 from a proxy means the route does not reach the model,
+// and the next route is tried; any other response, even 404, comes from something behind the route.
+func answers(ctx context.Context, ep *Endpoint) bool {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	req, err := newRequest(ctx, http.MethodGet, ep, "/", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := ep.client().Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return false
+	}
+	return true
 }
 
 func reachable(ctx context.Context, addr string) bool {
@@ -264,10 +301,17 @@ func portForwardService(ctx context.Context, c kube.Clients, svc *corev1.Service
 	failed := make(chan error, 1)
 	go func() { failed <- pf.ForwardPorts() }()
 
+	// The dialer takes no context: a server that accepts the connection but never answers the upgrade would block
+	// forever, so the wait is bounded here.
+	timeout := time.NewTimer(portForwardTimeout)
+	defer timeout.Stop()
 	select {
 	case <-ready:
 	case err := <-failed:
 		return nil, fmt.Errorf("port-forward to pod %s: %w", pod.Name, err)
+	case <-timeout.C:
+		close(stop)
+		return nil, fmt.Errorf("port-forward to pod %s did not start within %s", pod.Name, portForwardTimeout)
 	case <-ctx.Done():
 		close(stop)
 		return nil, ctx.Err()

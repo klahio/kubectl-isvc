@@ -2,6 +2,7 @@ package status
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,6 +49,27 @@ type Exposure struct {
 	Address string `json:"address,omitempty"`
 	// Leftover marks an Ingress that no longer publishes the external address (see IsLeftoverIngress).
 	Leftover bool `json:"leftover,omitempty"`
+	// Broken marks an exposure that a finding says cannot route (for example a rejected HTTPRoute).
+	Broken bool `json:"broken,omitempty"`
+}
+
+// Usable reports whether requests may be sent through the exposure.
+func (e Exposure) Usable() bool { return e.Address != "" && !e.Leftover && !e.Broken }
+
+// markBroken flags each exposure that a not-routable finding names: the Ingress, the HTTPRoute, or its Gateway.
+func markBroken(exposures []Exposure, findings []Finding) {
+	for i := range exposures {
+		e := &exposures[i]
+		objects := []string{strings.ToLower(e.Kind) + "/" + e.Name}
+		if gw, ok := strings.CutPrefix(e.Via, "Gateway "); ok {
+			objects = append(objects, "gateway/"+gw)
+		}
+		for _, f := range findings {
+			if f.Title == titleNotRoutable && slices.Contains(objects, f.Object) {
+				e.Broken = true
+			}
+		}
+	}
 }
 
 // ComponentState is the state of a predictor, transformer or explainer.
@@ -107,8 +129,9 @@ func Summarize(s *Snapshot, findings []Finding) *Summary {
 	if sum.Findings == nil {
 		sum.Findings = []Finding{}
 	}
+	markBroken(sum.Endpoints.Exposure, findings)
 	for _, f := range findings {
-		if f.Title == "External address not routable" {
+		if f.Title == titleNotRoutable {
 			sum.Endpoints.Routable = false
 		}
 	}

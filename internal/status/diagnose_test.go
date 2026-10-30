@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -79,6 +80,52 @@ func TestDiagnoseMergesIdenticalReplicas(t *testing.T) {
 	}
 	if last := errs[0].Details[len(errs[0].Details)-1]; last != "same problem in 2 pods" {
 		t.Errorf("last detail = %q", last)
+	}
+}
+
+// A container that was killed for memory once and is Ready again is history, not a current failure.
+func TestDiagnoseRecoveredFromOutOfMemory(t *testing.T) {
+	s := loadFixture(t, "sklearn-iris").snapshot(t)
+	cs := &s.Pods[0].Status.ContainerStatuses[0]
+	cs.RestartCount = 1
+	cs.LastTerminationState = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}}
+	if errs := errorsOnly(Diagnose(s)); len(errs) != 0 {
+		t.Fatalf("a recovered container must not be reported: %+v", errs)
+	}
+	cs.Ready = false
+	if errs := errorsOnly(Diagnose(s)); len(errs) != 1 || errs[0].Title != "Out of memory" {
+		t.Fatalf("while not ready again it is a failure: %+v", errs)
+	}
+}
+
+// storage-initializer killed for memory exits with 137: that is out of memory, not a failed download.
+func TestDiagnoseStorageInitializerOutOfMemory(t *testing.T) {
+	s := loadFixture(t, "bad-storage").snapshot(t)
+	for i := range s.Pods[0].Status.InitContainerStatuses {
+		cs := &s.Pods[0].Status.InitContainerStatuses[i]
+		oom := &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}
+		if cs.State.Terminated != nil {
+			cs.State.Terminated = oom
+		}
+		if cs.LastTerminationState.Terminated != nil {
+			cs.LastTerminationState.Terminated = oom
+		}
+	}
+	errs := errorsOnly(Diagnose(s))
+	if len(errs) != 1 || errs[0].Title != "Out of memory" || !strings.Contains(errs[0].Hint, "storageInitializer.memoryLimit") {
+		t.Fatalf("want out of memory with the storage-initializer hint, got %+v", errs)
+	}
+}
+
+// The old pod of a rolling update exits with SIGTERM while it is deleted; that is not a crash.
+func TestDiagnoseIgnoresTerminatingPods(t *testing.T) {
+	s := loadFixture(t, "oom").snapshot(t)
+	now := metav1.Now()
+	s.Pods[0].DeletionTimestamp = &now
+	for _, f := range Diagnose(s) {
+		if f.Object != "" && strings.Contains(f.Object, s.Pods[0].Name) {
+			t.Errorf("finding for a terminating pod: %+v", f)
+		}
 	}
 }
 

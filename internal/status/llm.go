@@ -139,7 +139,7 @@ func DiagnoseLLM(s *LLMSnapshot) []Finding {
 	out = append(out, routeFindings(s.HTTPRoutes, s.Gateways, s.Unknown, func(o, detail string) Finding {
 		return Finding{
 			Severity: SeverityWarning,
-			Title:    "External address not routable",
+			Title:    titleNotRoutable,
 			Details:  []string{detail},
 			Object:   o,
 			Hint:     fmt.Sprintf("`%s test llmisvc/%s` falls back to port-forward", version.Command, m.Name),
@@ -241,7 +241,7 @@ func SummarizeLLM(s *LLMSnapshot, findings []Finding) *LLMSummary {
 		sum.Model.Image = serverImage(s.Pods)
 	}
 	for _, f := range findings {
-		if f.Title == "External address not routable" {
+		if f.Title == titleNotRoutable {
 			sum.Endpoints.Routable = false
 		}
 	}
@@ -257,6 +257,7 @@ func SummarizeLLM(s *LLMSnapshot, findings []Finding) *LLMSummary {
 			sum.Endpoints.Exposure = append(sum.Endpoints.Exposure, e)
 		}
 	}
+	markBroken(sum.Endpoints.Exposure, findings)
 	sum.Workloads = workloads(s)
 	return sum
 }

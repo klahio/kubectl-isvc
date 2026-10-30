@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/klahio/kubectl-kserve/internal/inference"
 	"github.com/klahio/kubectl-kserve/internal/status"
@@ -156,7 +158,7 @@ func (o *testOptions) run(ctx context.Context, name string) error {
 
 	ep, err := inference.Discover(ctx, target, inference.DiscoverOptions{URL: o.url, PortForward: o.portForward})
 	if err != nil {
-		return &ExitError{Code: ExitFailure, Err: err}
+		return discoverError(err)
 	}
 	defer ep.Close()
 
@@ -197,6 +199,21 @@ func (o *testOptions) run(ctx context.Context, name string) error {
 		return &ExitError{Code: ExitFailure}
 	}
 	return nil
+}
+
+// discoverError maps a route failure to the exit codes of docs/mvp.md section 3: a bad --url is wrong usage, and
+// an API server refusal (listing Services or pods, or creating pods/portforward) is a cluster or permission error.
+func discoverError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return &ExitError{Code: ExitUsage, Err: err}
+	}
+	var apiErr apierrors.APIStatus
+	// The port-forward upgrade reports a refusal as text, not as an API status.
+	if errors.As(err, &apiErr) || strings.Contains(strings.ToLower(err.Error()), "forbidden") {
+		return &ExitError{Code: ExitClusterOrNF, Err: err}
+	}
+	return &ExitError{Code: ExitFailure, Err: err}
 }
 
 func (o *testOptions) readInput() ([]byte, error) {

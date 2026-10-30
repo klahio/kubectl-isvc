@@ -89,6 +89,8 @@ func (r TextRenderer) Render(w io.Writer, s *Summary) error {
 		line := fmt.Sprintf("  %s\t%s   via %s   address: %s", strings.ToLower(e.Kind), e.Name, dash(e.Via), dash(e.Address))
 		if e.Leftover {
 			line += "   " + r.paint(colorYellow, "leftover")
+		} else if e.Broken {
+			line += "   " + r.paint(colorYellow, "not routable")
 		}
 		fmt.Fprintln(tw, line)
 	}
@@ -243,7 +245,11 @@ func (r TextRenderer) RenderLLM(w io.Writer, s *LLMSummary) error {
 	fmt.Fprintf(tw, "  external\t%s\n", external)
 	fmt.Fprintf(tw, "  in-cluster\t%s\n", dash(s.Endpoints.InCluster))
 	for _, e := range s.Endpoints.Exposure {
-		fmt.Fprintf(tw, "  %s\t%s   via %s   address: %s\n", strings.ToLower(e.Kind), e.Name, dash(e.Via), dash(e.Address))
+		line := fmt.Sprintf("  %s\t%s   via %s   address: %s", strings.ToLower(e.Kind), e.Name, dash(e.Via), dash(e.Address))
+		if e.Broken {
+			line += "   " + r.paint(colorYellow, "not routable")
+		}
+		fmt.Fprintln(tw, line)
 	}
 	tw.Flush()
 

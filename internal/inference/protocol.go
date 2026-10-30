@@ -75,6 +75,9 @@ func shapeOf(body []byte) (shape, error) {
 	if err := json.Unmarshal(body, &top); err != nil {
 		return shape{}, fmt.Errorf("the input is not a JSON object: %w", err)
 	}
+	if top == nil { // null passes json.Unmarshal
+		return shape{}, errors.New("the input is not a JSON object: null")
+	}
 	var found []shape
 	for _, s := range []shape{
 		{V1, "", "instances"},
@@ -172,6 +175,8 @@ func PrepareOpenAI(body []byte, prompt, model string, maxTokens int) ([]byte, er
 		}
 	} else if err := json.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("the input is not a JSON object: %w", err)
+	} else if req == nil {
+		return nil, errors.New("the input is not a JSON object: null")
 	}
 	if stream, _ := req["stream"].(bool); stream {
 		return nil, errors.New(`"stream": true is not supported yet; remove it to get one complete response`)

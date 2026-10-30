@@ -12,6 +12,8 @@ One InferenceService turns into many Kubernetes objects: a serving runtime, Depl
 
 Commands take a resource the way kubectl does: `NAME` or `isvc/NAME` is an InferenceService, `llmisvc/NAME` is an LLMInferenceService (both are the short names KServe registers).
 
+This is a community plugin, not part of the KServe project. It is read-only and supports KServe's Standard deployment mode (not Knative serverless).
+
 ## Install
 
 With [krew](https://krew.sigs.k8s.io/) (once the plugin is in the krew index):
@@ -106,19 +108,21 @@ POST https://sklearn-iris-kserve-test.k8s.internal/v1/models/sklearn-iris:predic
 }
 ```
 
-You don't need to know the address. `test` uses the first route that works:
+You don't need to know the address. `test` uses the first route that answers (a TCP connection plus a `GET /` that gets an HTTP answer other than 502, 503 or 504):
 1. `--url`, if given
-2. the external address, when `status` considers it routable
+2. the external address, when `status` considers it routable and a healthy Ingress or HTTPRoute publishes it
 3. the external host name connected to the Ingress or Gateway address (like `curl --resolve`), when the name does not resolve on your machine
-4. a port-forward to a ready pod behind the stable predictor's (or transformer's) Service
+4. a port-forward to a ready pod behind the stable predictor's (or transformer's) Service. When that Service speaks HTTPS, the server's certificate is not verified, and the route line says so
 
-You don't need to know the protocol either. `test` uses the first rule that gives an answer: `--protocol`, the InferenceService's `protocolVersion`, the shape of the input (`instances` means v1, `inputs` means the v2 Open Inference Protocol), the runtime's first protocol, and finally v1. If the choice contradicts the input or the runtime, or the server's `/openapi.json` lacks the path, `test` stops before sending anything.
+The inference request itself is sent once, on the chosen route.
+
+You don't need to know the protocol either. `test` uses the first rule that gives an answer: `--protocol`, the InferenceService's `protocolVersion`, the shape of the input (`instances` means v1, `inputs` means the v2 Open Inference Protocol), the runtime's first protocol, and finally v1. If the choice contradicts the input or the runtime, or the server's `/openapi.json` lacks the path, `test` stops before sending the inference request.
 
 | Flag | Meaning |
 |---|---|
 | `-f, --filename` | Request body; `-` reads standard input |
 | `-o pretty\|summary\|raw\|json` | `summary` prints one line, `HTTP 200 · 1 ms · via port-forward · predictions: [1, 1]`; `raw` prints only the body, for `jq` |
-| `--protocol v1\|v2`, `--model`, `--url` | Override the automatic choices |
+| `--protocol v1\|v2\|openai`, `--model`, `--url` | Override the automatic choices |
 | `--port-forward auto\|always\|never` | Route control |
 | `-H "Name: value"` | Extra header, repeatable |
 
@@ -179,7 +183,7 @@ Every command takes the usual kubectl connection flags: `-n`, `--context`, `--ku
 | | Supported |
 |---|---|
 | KServe | v0.16 – v0.21. Tested on v0.21.0; v0.16 – v0.20 are covered by comparing the KServe source of each release, not yet by tests |
-| LLMInferenceService | `serving.kserve.io/v1alpha2` (KServe v0.17+) or `v1alpha1` (v0.16), whichever the cluster serves. Tested without a router; router setups (Gateway API Inference Extension) are covered by unit tests only |
+| LLMInferenceService | `serving.kserve.io/v1alpha2` (KServe v0.17+) or `v1alpha1` (v0.16), whichever the cluster serves. Tested without a router. Router setups (Gateway API Inference Extension) are diagnosed from `RouterReady` and their HTTPRoutes and Gateways, but not tested yet |
 | Deployment mode | Standard (formerly RawDeployment). Knative (Serverless) mode is not supported yet |
 | Exposure | Kubernetes Ingress and Gateway API HTTPRoute |
 | Canary rollouts | `spec.canary` (KServe v0.21, Standard mode) |
@@ -189,7 +193,8 @@ The plugin reads KServe objects as unstructured data and checks for fields rathe
 ## Permissions
 
 `kubectl kserve` never creates, changes or deletes cluster objects. It needs:
-- `get` and `list` on `inferenceservices`, `servingruntimes`, `clusterservingruntimes`, `pods`, `pods/log`, `deployments`, `horizontalpodautoscalers`, `services`, `ingresses`, `ingressclasses`, `httproutes`, `gateways` and `events`
+- `get` and `list` in the namespace on `inferenceservices`, `servingruntimes`, `pods`, `deployments`, `horizontalpodautoscalers`, `services`, `ingresses`, `httproutes` and `events`, and `get` on `pods/log`
+- cluster-wide `get` and `list` on `clusterservingruntimes` and `ingressclasses`, and `get` on the `gateways` an HTTPRoute attaches to (often in another namespace)
 - for LLMInferenceServices also `llminferenceservices` and, for multi-node services, `leaderworkersets`
 - `create` on `pods/portforward`, for `test`
 

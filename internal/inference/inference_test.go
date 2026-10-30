@@ -207,6 +207,44 @@ func TestDiscoverHostHeaderRoute(t *testing.T) {
 	}
 }
 
+// A route that accepts TCP but does not reach the model (a proxy answering 503), a route the diagnosis found broken,
+// and a host name nothing in the cluster vouches for all lead to port-forward.
+func TestDiscoverFallsBackToPortForward(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer proxy.Close()
+	good, _ := server(t, Choice{Protocol: V1}.PathTemplate())
+	_, proxyPort, _ := net.SplitHostPort(strings.TrimPrefix(proxy.URL, "http://"))
+	_, goodPort, _ := net.SplitHostPort(strings.TrimPrefix(good.URL, "http://"))
+
+	forwarded := &Endpoint{Route: "port-forward"}
+	portForward := func(context.Context) (*Endpoint, error) { return forwarded, nil }
+	tests := []struct {
+		name   string
+		target Target
+	}{
+		{"proxy answers 503", Target{
+			External: "http://m.example.invalid:" + proxyPort,
+			Exposure: []status.Exposure{{Kind: "HTTPRoute", Name: "m", Address: "127.0.0.1"}},
+		}},
+		{"broken route", Target{
+			External: "http://m.example.invalid:" + goodPort,
+			Exposure: []status.Exposure{{Kind: "HTTPRoute", Name: "m", Address: "127.0.0.1", Broken: true}},
+		}},
+		{"exposure unknown", Target{External: good.URL, Routable: routable(status.Endpoints{External: good.URL, Routable: true})}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.target.PortForward = portForward
+			ep, err := Discover(context.Background(), tt.target, DiscoverOptions{PortForward: PortForwardAuto})
+			if err != nil || ep != forwarded {
+				t.Errorf("endpoint = %+v, %v; want port-forward", ep, err)
+			}
+		})
+	}
+}
+
 func TestDiscoverURLFlag(t *testing.T) {
 	ep, err := Discover(context.Background(), Target{}, DiscoverOptions{URL: "http://localhost:8080/"})
 	if err != nil || ep.BaseURL != "http://localhost:8080" || ep.Route != "--url" {
@@ -287,6 +325,13 @@ func TestPrepareOpenAI(t *testing.T) {
 	}
 	if _, err := PrepareOpenAI([]byte(`{"messages":[],"stream":true}`), "", "m", 64); err == nil {
 		t.Error("streaming must be refused in version 0.1")
+	}
+	// null passes json.Unmarshal into a map and used to panic when the model was filled in.
+	if _, err := PrepareOpenAI([]byte(`null`), "", "m", 64); err == nil {
+		t.Error("a null body must be refused")
+	}
+	if _, err := shapeOf([]byte(`null`)); err == nil {
+		t.Error("shapeOf must refuse a null body")
 	}
 }
 

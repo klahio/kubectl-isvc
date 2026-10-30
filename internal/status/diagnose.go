@@ -134,6 +134,10 @@ func diagnosePods(all []corev1.Pod, describe func(*corev1.Pod) string) []Finding
 	sort.SliceStable(pods, func(i, j int) bool { return componentRank(pods[i]) < componentRank(pods[j]) })
 
 	for i := range pods {
+		// A pod being deleted (the old pod of a rolling update) exits with SIGTERM; that is not a failure.
+		if pods[i].DeletionTimestamp != nil {
+			continue
+		}
 		f, ok := podFinding(&pods[i], describe(&pods[i]))
 		if !ok {
 			continue
@@ -180,7 +184,8 @@ func podFinding(p *corev1.Pod, component string) (Finding, bool) {
 		if cs.Name != isvc.ContainerStorageInitial {
 			continue
 		}
-		if t := failedTermination(cs); t != nil {
+		// An out-of-memory kill also exits non-zero (137); containerFinding reports it as what it is.
+		if t := failedTermination(cs); t != nil && t.Reason != reasonOOMKilled {
 			return Finding{
 				Severity: SeverityError,
 				Title:    "Model download failed",
@@ -246,17 +251,17 @@ func containerFinding(p *corev1.Pod, cs corev1.ContainerStatus, object string) (
 		}
 	}
 
-	t := cs.State.Terminated
-	if t == nil {
-		t = cs.LastTerminationState.Terminated
-	}
-	if t != nil && t.Reason == "OOMKilled" {
+	if t := failedTermination(cs); t != nil && t.Reason == reasonOOMKilled {
+		hint := "raise resources.limits.memory"
+		if cs.Name == isvc.ContainerStorageInitial {
+			hint = "raise storageInitializer.memoryLimit in the inferenceservice-config ConfigMap of the KServe namespace"
+		}
 		return Finding{
 			Severity: SeverityError,
 			Title:    "Out of memory",
 			Details:  []string{fmt.Sprintf("container %s was killed for exceeding its memory limit (%s), restarts: %d", cs.Name, memoryLimit(p, cs.Name), cs.RestartCount)},
 			Object:   object,
-			Hint:     "raise resources.limits.memory",
+			Hint:     hint,
 		}, true
 	}
 	if t := failedTermination(cs); t != nil {
@@ -271,7 +276,10 @@ func containerFinding(p *corev1.Pod, cs corev1.ContainerStatus, object string) (
 	return Finding{}, false
 }
 
-// failedTermination returns the current or last termination when it ended with a non-zero exit code.
+const reasonOOMKilled = "OOMKilled"
+
+// failedTermination returns the current or last termination when it ended with a non-zero exit code. A last
+// termination counts only while the container is not ready again: one that recovered is history, not a failure.
 func failedTermination(cs corev1.ContainerStatus) *corev1.ContainerStateTerminated {
 	if t := cs.State.Terminated; t != nil && t.ExitCode != 0 {
 		return t
@@ -408,10 +416,12 @@ func hostOf(rawURL string) string {
 	return u.Hostname()
 }
 
+const titleNotRoutable = "External address not routable"
+
 func notRoutable(s *Snapshot, object, detail string) Finding {
 	f := Finding{
 		Severity: SeverityWarning,
-		Title:    "External address not routable",
+		Title:    titleNotRoutable,
 		Details:  []string{detail},
 		Object:   object,
 		Hint:     fmt.Sprintf("`%s test %s` falls back to port-forward", version.Command, s.ISVC.Name),
