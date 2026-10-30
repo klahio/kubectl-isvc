@@ -1,0 +1,33 @@
+# Minimal LLMInferenceService (KServe v0.21): SmolLM2 135M Instruct on vLLM, no router, so no Envoy Gateway or
+# inference scheduler is needed. The lab GPU is time-sliced (one 16 GB card shared as 4 nvidia.com/gpu), so vLLM is
+# capped at 30% of GPU memory; GPU pods on the lab cluster need the "nvidia" RuntimeClass.
+# TRITON_LIBCUDA_PATH: the llm-d-cuda image sets it to /usr/lib64 (RHEL layout), but on an Ubuntu node the NVIDIA
+# runtime mounts libcuda.so.1 in /usr/lib/x86_64-linux-gnu, so Triton fails with "ld: cannot find -l:libcuda.so.1".
+# kubectl apply -n kserve-test -f examples/llmisvc-smollm.yaml
+apiVersion: serving.kserve.io/v1alpha2
+kind: LLMInferenceService
+metadata:
+  name: smollm
+spec:
+  model:
+    uri: hf://HuggingFaceTB/SmolLM2-135M-Instruct
+    name: HuggingFaceTB/SmolLM2-135M-Instruct
+  replicas: 1
+  template:
+    runtimeClassName: nvidia
+    containers:
+      - name: main
+        env:
+          - name: VLLM_ADDITIONAL_ARGS
+            value: "--gpu-memory-utilization=0.3 --max-model-len=4096"
+          - name: TRITON_LIBCUDA_PATH
+            value: /usr/lib/x86_64-linux-gnu
+        resources:
+          requests:
+            cpu: "1"
+            memory: 4Gi
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "4"
+            memory: 8Gi
+            nvidia.com/gpu: "1"
