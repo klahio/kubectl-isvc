@@ -1,10 +1,10 @@
 # kubectl-kserve — minimum viable product (version 0.1)
 
-Status: **draft for review** · Last updated: 2026-10-29 · Supports KServe v0.16 – v0.21 (lab cluster runs v0.21.0)
+Status: **draft for review** · Last updated: 2026-10-29 · Supports KServe v0.16 – v0.21 (lab cluster runs v0.21.0) · Resources: InferenceService and LLMInferenceService
 
 ## 1. Purpose
 
-`kubectl-kserve` is a kubectl plugin for day-to-day operation of a single **KServe InferenceService** (short name `isvc`).
+`kubectl-kserve` is a kubectl plugin for day-to-day operation of a single KServe model service: an **InferenceService** (short name `isvc`) or an **LLMInferenceService** (`llmisvc`, KServe's resource for large language models; section 6a).
 
 One InferenceService fans out into many Kubernetes objects: a ServingRuntime, Deployments, ReplicaSets, Pods, an init container that downloads the model, a Service, an Ingress or HTTPRoute, and a HorizontalPodAutoscaler. When a model is not serving, finding the reason means checking each of them by hand. When it is serving, calling it means working out the right address, protocol and request body.
 
@@ -12,9 +12,11 @@ Version 0.1 answers three questions with one command each:
 
 | Question | Command |
 |---|---|
-| Is my model serving, and if not, why? | `kubectl kserve status <name>` |
-| Does it actually answer a request? | `kubectl kserve test <name> -f input.json` |
-| What did its containers print? | `kubectl kserve logs <name>` |
+| Is my model serving, and if not, why? | `kubectl kserve status <name>` or `status llmisvc/<name>` |
+| Does it actually answer a request? | `kubectl kserve test <name> -f input.json` or `test llmisvc/<name> --prompt "..."` |
+| What did its containers print? | `kubectl kserve logs <name>` or `logs llmisvc/<name>` |
+
+Sections 4 – 6 describe the commands for InferenceServices; section 6a describes what changes for LLMInferenceServices.
 
 ### Goal
 
@@ -24,7 +26,7 @@ Acceptance into the official krew plugin index (`kubernetes-sigs/krew-index`).
 
 There is no existing krew plugin for KServe InferenceService (checked 2026-10-29). The closest neighbor is `inferaudit`, a read-only, cluster-wide audit report of model-serving pods.
 
-> inferaudit = cluster-wide audit report; kubectl-kserve = day-to-day operational commands for a single InferenceService.
+> inferaudit = cluster-wide audit report; kubectl-kserve = day-to-day operational commands for a single InferenceService or LLMInferenceService.
 
 ## 2. Supported environment
 
@@ -34,6 +36,7 @@ There is no existing krew plugin for KServe InferenceService (checked 2026-10-29
 | KServe version | **v0.16.0 (released 2025-11-03) through v0.21.0**. See section 2.1 |
 | Kubernetes | Whatever the KServe version in use requires (v0.21.0: 1.32 or newer) |
 | InferenceService API | `serving.kserve.io/v1beta1` |
+| LLMInferenceService API | `serving.kserve.io/v1alpha2` (KServe v0.17+), falling back to `v1alpha1` (v0.16). See section 6a |
 | Network exposure | Kubernetes Ingress **or** Gateway API HTTPRoute, both fully supported (section 2.2). Neither is required, because `test` falls back to port-forward |
 
 Knative (Serverless) mode is out of scope for 0.1. If `status` sees the annotation `serving.kserve.io/deploymentMode` with any value other than `Standard` or `RawDeployment`, it prints a clear "not supported in version 0.1" message instead of wrong output.
@@ -106,6 +109,7 @@ By default `status` is informational: it exits 0 whatever the InferenceService's
 
 Version 0.1 only needs read access, plus `pods/portforward` for `test`.
 - `get` and `list` on: `inferenceservices`, `servingruntimes`, `clusterservingruntimes`, `pods`, `pods/log`, `deployments`, `replicasets`, `services`, `ingresses`, `ingressclasses`, `httproutes`, `gateways`, `events`
+- For LLMInferenceServices also: `llminferenceservices`, `llminferenceserviceconfigs`, `leaderworkersets` (multi-node only) and `inferencepools` (with a router only)
 - Missing permission for an optional object (for example `gateways`) downgrades that part of the output to "unknown (no permission)" instead of failing the command.
 - `create` on `pods/portforward`
 
@@ -218,7 +222,7 @@ The command always says which route it used ("via port-forward to svc/sklearn-ir
 Use the first rule that gives an answer:
 1. The `--protocol` flag (`v1` or `v2`)
 2. `spec.predictor.model.protocolVersion` on the InferenceService
-3. The shape of the input file: a top-level `instances` key means v1, a top-level `inputs` key means v2
+3. The shape of the input file: a top-level `instances` key means v1, a top-level `inputs` key means v2, and a top-level `messages` or `prompt` key means the OpenAI-compatible API (KServe's Hugging Face runtime serves it under `/openai`; section 6a.3)
 4. The first entry in the selected runtime's `protocolVersions`
 5. v1
 
@@ -230,6 +234,7 @@ If the server publishes `/openapi.json`, check that the chosen path exists there
 |---|---|
 | v1 | `POST /v1/models/<model>:predict` |
 | v2 (Open Inference Protocol) | `POST /v2/models/<model>/infer` |
+| OpenAI-compatible, InferenceService (Hugging Face runtime) | `POST /openai/v1/chat/completions` (`messages`) or `/openai/v1/completions` (`prompt`) |
 
 The model name defaults to the InferenceService name, which is how KServe's built-in runtimes register it. It can be overridden with `--model`.
 
@@ -296,6 +301,88 @@ Shows logs from the right pods and containers. You don't need to know pod names,
 - `kubectl kserve logs sklearn-iris --init` prints the model download.
 - `-f` keeps following across a pod restart.
 
+## 6a. LLMInferenceService (`llmisvc/NAME`)
+
+Added to version 0.1 on 2026-10-29 (decision 6). The three commands keep their names and flags; `TYPE/NAME` (decision 5) picks the resource: `kubectl kserve status llmisvc/smollm`.
+
+### 6a.1 What KServe creates
+
+Observed on the lab cluster with `examples/llmisvc-smollm.yaml` (KServe v0.21.0, no `spec.router`):
+
+| Object | Name | Notes |
+|---|---|---|
+| Deployment (single node) or LeaderWorkerSet (multi-node, `spec.worker`) | `<name>-kserve` | Owned by the LLMInferenceService |
+| Pods | `<name>-kserve-...` | Init container `storage-initializer`, server container `main` (vLLM, image `ghcr.io/llm-d/llm-d-cuda`) |
+| Service | `<name>-kserve-workload-svc` | Port 8000, plain HTTP on the lab cluster |
+| Secret | `<name>-kserve-self-signed-certs` | Created even when TLS is off |
+| With `spec.router`: HTTPRoute, InferencePool, scheduler Deployment | | Need a Gateway implementation that supports the Gateway API Inference Extension; not set up on the lab cluster yet |
+
+Labels on the workload objects: `app.kubernetes.io/part-of=llminferenceservice`, `app.kubernetes.io/name=<name>`, `kserve.io/component=workload` (other values for the scheduler), and `llm-d.ai/role` = `both`, `prefill` or `decode`. The plugin selects with both `part-of` and `name`, because `app.kubernetes.io/name` alone could match unrelated objects.
+
+Status (v1alpha2): `url` (only with a router), `addresses[].url`, `conditions` (`Ready`, `MainWorkloadReady`, `WorkloadsReady`, `RouterReady`, `PresetsCombined`, and prefill or scheduler conditions when those exist), `workloads.primary|prefill|scheduler|service` (references with `readyReplicas`), `router` (`gateways`, `scheduler.inferencePool`), and `appliedConfigs` (the LLMInferenceServiceConfig presets merged into the spec).
+
+**Version differences** (compared in the CRD schemas): `v1alpha1`, the only version in KServe v0.16, has no `status.workloads` and no `status.appliedConfigs`. There, the plugin finds the workloads through owner references and the labels above. The plugin asks the API server which version it serves and prefers `v1alpha2`.
+
+### 6a.2 `status llmisvc/NAME`
+
+Shows, in the same layout as section 4:
+1. **Header**: name, namespace, Ready, age, API version
+2. **Endpoints**: `status.url`, every `status.addresses[].url`; with a router, the HTTPRoute, its Gateway and the InferencePool
+3. **Model**: `spec.model.uri`, the served model name (`spec.model.name`), LoRA adapters, the `main` container image, the parallelism settings (tensor, data, pipeline), and the presets in `appliedConfigs`
+4. **Workloads**: primary (decode), prefill and scheduler, each with ready and desired replicas; for multi-node workloads, the LeaderWorkerSet group size
+5. **Conditions** and **Diagnosis**
+
+Diagnosis: all pod rules of section 4.2 apply to the workload pods (model download, image pull, crash, out of memory, scheduling). In addition:
+
+| Situation | How it is detected | What it prints |
+|---|---|---|
+| Server crashes, root cause earlier in the log | `main` restarts with a non-zero exit. vLLM's last line is usually only "Engine core initialization failed" | Searches the previous instance's last 300 log lines for known causes and error lines, and prints the first match instead of the last line (table below) |
+| Server still loading, not crashed | Startup probe failing, no restarts yet | "Starting: model loading can take minutes", with the elapsed time, so it is not mistaken for a failure |
+| A preset cannot be applied | `PresetsCombined=False` | The condition message (for example a missing LLMInferenceServiceConfig in `spec.baseRefs`) |
+| Multi-node without LeaderWorkerSet | `spec.worker` set, and the `leaderworkersets` API is missing | "LeaderWorkerSet is not installed" |
+| Router problems | `RouterReady=False`; HTTPRoute `Accepted` or `ResolvedRefs` not True; InferencePool or scheduler not ready | The failing object and its condition. A Gateway implementation without Inference Extension support shows up as an HTTPRoute whose InferencePool backend is not resolved |
+
+Known vLLM start-up causes. Each one is matched in the log and printed with a hint:
+
+| Log text | Meaning | Hint |
+|---|---|---|
+| `cannot find -l:libcuda.so.1` | Triton cannot find the NVIDIA driver library; seen on the lab cluster | Set `TRITON_LIBCUDA_PATH` to the node's driver directory (`/usr/lib/x86_64-linux-gnu` on Ubuntu or Debian nodes, `/usr/lib64` on RHEL-family nodes) |
+| `CUDA out of memory`, `No available memory for the cache blocks` | GPU memory too small for the model plus KV cache | Lower `--max-model-len`, raise `--gpu-memory-utilization`, or use a larger GPU |
+| `No CUDA GPUs are available`, `Failed to infer device type` | No GPU visible in the container | Check the GPU request and, where the cluster needs one, `runtimeClassName` |
+| `401`, `gated repo`, `Access to model ... is restricted` | Hugging Face refuses the download | Provide a Hugging Face token Secret |
+
+The table is a starting set; new cases are added as they are seen, each with a fixture.
+
+### 6a.3 `test llmisvc/NAME`
+
+LLMInferenceServices serve vLLM's OpenAI-compatible API, at the root (`/v1/...`), not under `/openai` like KServe's Hugging Face runtime.
+
+- **Input**: `-f` with an OpenAI request body: `messages` means `POST /v1/chat/completions`, `prompt` means `POST /v1/completions`. Or `--prompt "text"`, which builds a chat request with one user message. `--max-tokens` (default 64) caps the answer.
+- **Model name**: `"model"` from the input if present, otherwise `spec.model.name`, otherwise the first id from `GET /v1/models`.
+- **Route**: `--url`; `status.url` when routable (with a router); the Gateway address with the external host name (as in section 5); otherwise port-forward to `<name>-kserve-workload-svc`, port from the Service. HTTPS when the Service port says so.
+- **Streaming**: version 0.1 sends `"stream": false` only.
+- **Output**: `pretty` shows the answer text, the finish reason and the token usage; `summary` is one line, for example `HTTP 200 · 412 ms · via port-forward · "Kubernetes is ..." · 41+40 tokens`; `raw` and `json` as in section 5.
+- The same OpenAI mode works for InferenceServices whose server publishes `/openai/v1/chat/completions` (KServe's Hugging Face runtime). The `/openapi.json` check of section 5 tells the two path layouts apart.
+
+### 6a.4 `logs llmisvc/NAME`
+
+- Default: container `main` of every primary workload pod.
+- `-c`/`--component`: `main` (default), `prefill`, `scheduler`, `worker` (the non-leader pods of a multi-node LeaderWorkerSet), or `all`.
+- `--init`, `--all-containers`, `-f`, `--since`, `--tail`, `-p` and `--prefix` work as in section 6.
+
+### 6a.5 Acceptance criteria
+
+- With `examples/llmisvc-smollm.yaml` Ready on the lab cluster:
+  - `status llmisvc/smollm` shows Ready, the in-cluster address, model `HuggingFaceTB/SmolLM2-135M-Instruct`, the preset `kserve-config-llm-template` and the primary workload 1/1.
+  - `test llmisvc/smollm --prompt "What is Kubernetes?"` returns an answer through port-forward, with no other flags.
+  - `logs llmisvc/smollm` shows the vLLM start-up lines.
+- With `TRITON_LIBCUDA_PATH` removed from the sample, `status` names `cannot find -l:libcuda.so.1` and the hint, not "Engine core initialization failed".
+- Against `v1alpha1` objects (KServe v0.16), `status` still lists the workloads (found through owner references). Not verifiable on the lab cluster; covered by a unit test with an edited fixture.
+
+### 6a.6 Lab setup
+
+Minimal install, enough without a router (2026-10-29): Helm charts `kserve-llmisvc-crd` and `kserve-llmisvc-resources` (with `kserve.createSharedResources=false`, because `kserve-resources` already owns the shared objects), then `kserve-runtime-configs` with `kserve.llmisvcConfigs.enabled=true` for the presets. The resources chart also installs the Gateway API Inference Extension CustomResourceDefinitions. A router (Envoy Gateway with Envoy AI Gateway, or another Gateway implementation with Inference Extension support) is not installed; router diagnosis is tested with fixtures until it is.
+
 ## 7. Test plan
 
 Unit tests use the fake dynamic client and the fake Kubernetes client from client-go, fed with real objects captured from the lab cluster.
@@ -312,7 +399,11 @@ End-to-end checks run against the lab cluster, namespace `kserve-test`, with the
 | `examples/broken/no-runtime.yaml` | `status` diagnoses that no serving runtime supports the model format |
 | `examples/sklearn-canary.yaml` | `status` shows stable 80%, canary `v2` 20% with its own replicas (needs Gateway API, see below) |
 | HTTPRoute pointing at a Gateway that does not exist | `status` diagnoses the Gateway API problem (unit test with an edited fixture) |
-| `examples/qwen-llm.yaml` (graphics processing unit, time-sliced) | Healthy; `status` and `logs` work. Its OpenAI-compatible endpoints are not covered by `test` in 0.1 |
+| `examples/qwen-llm.yaml` (InferenceService, Hugging Face runtime on a time-sliced graphics processing unit) | Healthy; `test` in OpenAI mode reaches `/openai/v1/chat/completions` |
+| `examples/llmisvc-smollm.yaml` (LLMInferenceService, no router) | Healthy; acceptance criteria of section 6a.5 |
+| `examples/broken/llmisvc-libcuda.yaml` (to add: the sample without `TRITON_LIBCUDA_PATH`) | `status` names `cannot find -l:libcuda.so.1` with the hint |
+| `examples/broken/llmisvc-bad-model.yaml` (to add: a model URI that does not exist) | `status` diagnoses the model download failure |
+| LLMInferenceService with a router whose Gateway lacks Inference Extension support | `status` diagnoses the unresolved InferencePool backend (unit test with an edited fixture, until a router is installed) |
 
 ### Exposure setups
 
@@ -333,7 +424,7 @@ Both setups must pass before a release. Fixtures for both are in `internal/statu
 
 ### Version matrix
 
-**Current state (2026-10-29): only KServe v0.21.0 is tested.** The unit-test fixtures are `internal/status/testdata/v0.21` (Ingress) and `v0.21-gateway-api`. Support for v0.16 – v0.20 rests on comparing the KServe source at each release tag (section 2.1), not on tests. The README says so too.
+**Current state (2026-10-29): only KServe v0.21.0 is tested.** The unit-test fixtures are `internal/status/testdata/v0.21` (Ingress) and `v0.21-gateway-api`; LLMInferenceService fixtures are still to be captured. Support for v0.16 – v0.20 rests on comparing the KServe source at each release tag (section 2.1), not on tests. The README says so too.
 
 Target, not done yet:
 - **Fixtures** from each supported line: v0.16 (oldest), v0.18 (middle) and v0.21 (newest), captured with `hack/capture-fixtures.sh`.
@@ -352,8 +443,12 @@ Decided 2026-10-29:
 5. **Plugin name**: `kserve` (binary `kubectl-kserve`, repository `klahio/kubectl-kserve`). Renamed from `isvc` on 2026-10-29, before the first release.
    - **Why**: KServe v0.21 already defines other resources the plugin can grow into: LLMInferenceService, InferenceGraph, TrainedModel and the local model caches. A plugin named after one of them (`isvc`) would no longer fit. `kserve` also follows the krew naming guide: it prefixes the vendor identifier and avoids a resource abbreviation. No krew-index plugin uses the name.
    - **Trade-off**: the name is broad and may read as "everything about KServe". The `TYPE/NAME` design below makes that growth deliberate.
-   - **`TYPE/NAME` arguments**: like kubectl (`kubectl logs deploy/x`), every command takes `NAME` or `TYPE/NAME`. A bare `NAME`, or `isvc/NAME`, `inferenceservice/NAME` and the plural and API-group spellings, mean an InferenceService. Version 0.1 handles only that type. Other KServe types (`llmisvc`, `ig`, `tm`, the runtimes) give a usage error saying they are not supported yet, and unknown types give "unknown resource type". Later versions add a handler per type behind the same commands, for example `kubectl kserve status llmisvc/NAME`.
+   - **`TYPE/NAME` arguments**: like kubectl (`kubectl logs deploy/x`), every command takes `NAME` or `TYPE/NAME`. A bare `NAME`, or `isvc/NAME`, `inferenceservice/NAME` and the plural and API-group spellings, mean an InferenceService. `llmisvc/NAME` (and `llminferenceservice/NAME`) means an LLMInferenceService (decision 6). Other KServe types (`ig`, `tm`, the runtimes) give a usage error saying they are not supported yet, and unknown types give "unknown resource type". Each type has its own handler behind the same commands.
    - **Keeping a rename cheap**: the name is spelled out in one place in the code, `version.Name`. Messages build "kubectl kserve" from `version.Command`.
+
+6. **LLMInferenceService in version 0.1**: `status`, `test` and `logs` support `llmisvc/NAME` (section 6a). This brings the OpenAI-compatible request mode into 0.1, for LLMInferenceServices and for InferenceServices on the Hugging Face runtime. Router-based setups (Gateway API Inference Extension) are diagnosed from their objects, but tested only with fixtures until a router is installed on the lab cluster.
+7. **No `create` command**: creating or editing resources stays with YAML and `kubectl apply`. The plugin stays read-only.
+8. **Release**: the `v0.1.0` tag pushed before decision 6 (pointing at `2c54901`, no release published) is to be deleted, and `v0.1.0` re-tagged once section 6a is implemented.
 
 ### Still open
 
@@ -366,11 +461,11 @@ Decided 2026-10-29:
 | Knative (Serverless) mode | Different objects (Knative Services and Revisions) and different status fields; the biggest scope risk | 0.2 |
 | `kubectl kserve list` | `kubectl get isvc` is good enough for 0.1 | 0.2 |
 | ServingRuntime listing | Runtime information already appears in `status` | 0.2 |
-| `--chat` for large language model runtimes (OpenAI-compatible `/openai/v1/chat/completions`) | A different request format and streaming responses | 0.2 |
-| LLMInferenceService (`llmisvc/NAME`) | A separate controller with its own objects (gateway inference extension, scheduler, LeaderWorkerSet for multi-node) | 0.2 candidate, through `TYPE/NAME` (decision 5) |
+| Streaming responses (`"stream": true`) | Server-sent events need a different output path | 0.2 |
+| Disaggregated prefill and decode, and multi-node workloads, on the lab cluster | One GPU, one node; covered by fixtures only | When hardware allows |
 | InferenceGraph (`ig/NAME`) | Its API is still `v1alpha1`, and it is rarely used | Later. First as a "used by graph X" line in `status`, then `kubectl kserve status ig/NAME` |
 | TrainedModel (`tm/NAME`, multi-model serving) | Rarely used | Later |
-| Creating or editing InferenceServices | YAML plus `kubectl apply` already does this well | Not planned |
+| Creating or editing InferenceServices or LLMInferenceServices | YAML plus `kubectl apply` already does this well; the plugin stays read-only (decision 7) | Not planned |
 | Saving non-JSON responses (for example generated images) to a file | Needs custom predictors with their own response formats | Later |
 
 ## 10. Implementation notes
